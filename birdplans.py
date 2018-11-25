@@ -9,13 +9,19 @@ predict upcoming satellite passes at a given location
 '''
 
 import unittest
-
 import math
+import html
+
+from datetime import datetime, timezone
+
+from urllib import parse
 
 from skyfield.api import load, Topos
 import maidenhead as mh
 from scipy import optimize
 import numpy as np
+from tzwhere import tzwhere
+import pytz
 
 class TestBirdPlan(unittest.TestCase):
     '''exercise the various functions in birdplan'''
@@ -116,7 +122,7 @@ class PassQuery:
 
         self.diff = self.satellite - self.location
 
-        alt_f = lambda t: self.diff.at(t).altaz()[0].degrees
+        alt_f = lambda t: self.altaz(t)[0].degrees
 
         self.orbit_period_per_minute = (2.0 * np.pi) / self.satellite.model.no
         self.window_width = window_end - window_start
@@ -160,6 +166,11 @@ class PassQuery:
 
         self.passes = list(zip(rising, filtered_peaks, setting))
 
+    def altaz(self, time):
+        '''Altitude, azimuth, and distance for satellite-home at time.
+        '''
+        return self.diff.at(time).altaz()
+
 def pass_query_wrapper(
         satellite_name
         , maidenhead
@@ -190,3 +201,219 @@ def pass_query_wrapper(
         , time_range[0]
         , time_range[-1]
         , minimum_altitude)
+
+def multibird_pass_query_wrapper(
+        satellite_names
+        , maidenhead
+        , window_start
+        , window_days
+        , minimum_altitude):
+    '''Call PassQuery with several birds, sorting the results by rising time.
+
+    :param satellite_names: iterable of satellite names in birdplan.tle
+    :param maidenhead: maidenhead grid locator for earth reference point
+    :param window_start: (year, month, day) tuple to start searching from
+    :param window_days: number of days to query passes for
+    :param minimum_altitude: minimum peak elevation to query
+    '''
+
+    birdplan = BirdPlan()
+
+    window_minutes = 24.0 * 60.0 * window_days
+    time_range = birdplan.timescale.utc(*window_start, 0, range(int(window_minutes)))
+
+    return [
+        (
+            satellite_name
+            , PassQuery(
+                birdplan
+                , birdplan.tle[satellite_name]
+                , Topos(*mh.toLoc(maidenhead))
+                , time_range[0]
+                , time_range[-1]
+                , minimum_altitude)
+        )
+        for satellite_name in satellite_names
+    ]
+
+class Message:
+    '''A message displayed with the results.
+    '''
+
+    def __init__(self, message, error=False):
+        '''Initialize'''
+        self.message = message
+        self.error = error
+
+    def render(self):
+        return '<p class="message error{}">{}</p>'.format(
+            str(self.error), html.escape(self.message)
+        )
+
+    def __str__(self):
+        return self.render()
+
+def web_query_wrapper(query_string):
+    '''Given a query string, prepare results that can go to JSON or HTML.
+    '''
+    messages = []
+    t0 = datetime.now(timezone.utc)
+
+    maidenhead = None
+    try:
+        maidenhead = query_string['maidenhead'][0]
+    except KeyError:
+        messages.append(Message("Missing key 'maidenhead'", True))
+
+    try:
+        latlng = mh.toLoc(maidenhead)
+    except Exception as ex:
+        messages.append(Message("Exception decoding maidenhead: {}".format(str(ex)), True))
+
+    tzname = 'UTC'
+    try:
+        tzname = query_string['tz'][0]
+    except KeyError:
+        try:
+            tzname = tzwhere.tzNameAt(*latlng)
+            messages.append(
+                Message('Inferring local timezone {} from location {}'.format(tzname, latlng))
+            )
+        except Exception as ex:
+            messages.append(Message("Exception inferring local timezone': {}".format(str(ex)), True))
+
+    tz = pytz.utc
+    try:
+        tz = pytz.timezone(tzname)
+    except Exception as ex:
+        messages.append(
+            Message('Exception looking up local timezone, using UTC: {}'.format(str(ex)), True)
+        )
+
+    # [now, now + 5 days]
+    start_time = global_birdplan.timescale.utc(datetime.now(timezone.utc))
+    end_time = global_birdplan.timescale.tai_jd(start_time.tai + 5)
+
+    topos = None
+    try:
+        topos = Topos(*latlng)
+    except Exception as ex:
+        messages.append(Message('Exception initializing Topos: {}'.format(str(ex)), True))
+
+    minimum_altitude = 30.0
+    try:
+        minimum_altitude = float(query_string['alt'][0])
+    except Exception as ex:
+        messages.append(
+            Message('Exception decoding minimum altitude; using {:.2f}: {}'.format(
+                minimum_altitude, str(ex)
+            ), True)
+        )
+
+    satellite_names = []
+    try:
+        satellite_names = query_string['sat']
+    except KeyError:
+        messages.append(Message('No satellites specified', True))
+
+    results = [
+        (
+            satellite_name
+            , PassQuery(
+                global_birdplan
+                , global_birdplan.tle[satellite_name]
+                , topos
+                , start_time
+                , end_time
+                , minimum_altitude)
+        )
+        if satellite_name in global_birdplan.tle
+        else (satellite_name, None)
+        for satellite_name in satellite_names
+    ]
+
+    missing_birds = set(satellite_names) - set(global_birdplan.tle.keys())
+    if missing_birds:
+        messages.append(Message('Birds not found: {}'.format(';'.join(missing_birds)), True))
+
+    t1 = datetime.now(timezone.utc)
+
+    return {
+        'maidenhead': maidenhead,
+        'tzname': tzname,
+        'topos': topos,
+        'start_time': start_time,
+        'end_time': end_time,
+        'tz': tz,
+        'minimum_altitude': minimum_altitude,
+        'messages': messages,
+        'results': results,
+        'query_time': t1 - t0
+    }
+
+def make_pass_tuples(results):
+    '''Get the packed format into a tuple we can easily sort and yield.
+    '''
+    for bird, passquery in results:
+        if passquery:
+            for _pass in passquery.passes:
+                yield (bird, passquery, *_pass)
+
+
+def html_web_wrapper(query_string):
+    '''Do a query and return the results in an HTML table.
+    '''
+
+    results = web_query_wrapper(query_string)
+
+    yield '<ul>'
+    for message in results['messages']:
+        yield '<li>' + str(message)
+    yield '</ul>'
+
+    yield '<table border="1">'
+    yield '<tr><th rowspan=2>Bird<th rowspan=2>Max El<th rowspan=2>Duration (Minutes)<th colspan=3>Azimuth<th colspan=3>{}<th colspan=3>UTC'.format(results['tzname'])
+    yield '<tr><th>AOS<th>TCA<th>LOS<th>AOS<th>TCA<th>LOS<th>AOS<th>TCA<th>LOS'
+
+    sorted_passes = sorted(make_pass_tuples(results['results']), key=lambda r: r[2].tai)
+
+    long_strftime = '%Y-%m-%d %H:%M:%S %Z'
+    short_strftime= '%H:%M:%S'
+
+    for _pass in sorted_passes:
+        bird, pq, aos, tca, los = _pass
+        yield '<tr>' + ''.join('<td>{}'.format(html.escape(_)) for _ in [
+            bird
+            , '{:.2f}'.format(pq.altaz(tca)[0].degrees)
+            #, '{:.2f}'.format((los - aos) * 24.0 * 60.0)
+            , str(los.astimezone(pytz.UTC) - aos.astimezone(pytz.UTC))
+            , '{:.2f}'.format(pq.altaz(aos)[1].degrees)
+            , '{:.2f}'.format(pq.altaz(tca)[1].degrees)
+            , '{:.2f}'.format(pq.altaz(los)[1].degrees)
+            , aos.astimezone(results['tz']).strftime(long_strftime)
+            , tca.astimezone(results['tz']).strftime(short_strftime)
+            , los.astimezone(results['tz']).strftime(short_strftime)
+            , aos.astimezone(pytz.UTC).strftime(long_strftime)
+            , tca.astimezone(pytz.UTC).strftime(short_strftime)
+            , los.astimezone(pytz.UTC).strftime(short_strftime)
+#            , aos.astimezone(results['tz']).isoformat()
+#            , tca.astimezone(results['tz']).isoformat()
+#            , los.astimezone(results['tz']).isoformat()
+#            , aos.astimezone(pytz.UTC).isoformat()
+#            , tca.astimezone(pytz.UTC).isoformat()
+#            , los.astimezone(pytz.UTC).isoformat()
+        ])
+
+    yield '</table>'
+
+def application(env, start_response):
+    '''uWSGI handler.
+    '''
+    keys = parse.parse_qs(env['QUERY_STRING'])
+    start_response('200 OK', [('Content-Type', 'text/html; charset=utf-8')])
+    return [bytes(_, 'utf-8') for _ in html_web_wrapper(keys)]
+
+# this is meant to be shared across uWSGI application() invocations
+tzwhere = tzwhere.tzwhere()
+global_birdplan = BirdPlan()
+global_birdplan.add_satellite_alias('FOX-1B', 'AO-91')
