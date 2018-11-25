@@ -68,16 +68,20 @@ class BirdPlan:
     '''interface for bird planning'''
 
     def __init__(self, tle_file='data/tle/amateur.txt'):
-        '''initialize persistent state'''
+        '''Initialize persistent state.
+        '''
         self.tle_file = tle_file
         self.tle = load.tle(tle_file)
         self.timescale = load.timescale()
 
     def add_satellite_alias(self, satellite, alias):
+        '''Set an alias for a satellite in the TLE.
+        '''
         self.tle[alias] = self.tle[satellite]
 
     def query_point_in_time(self, bird, maidenhead, when):
-        '''find the altitude, azimuth, and distance of bird with respect to maidenhead at time'''
+        '''Find the altitude, azimuth, and distance of bird with respect to maidenhead at time.
+        '''
         where = mh.toLoc(maidenhead)
         diff = self.tle[bird] - Topos(*where)
         topocentric = diff.at(when)
@@ -96,8 +100,8 @@ class PassQuery:
         '''Predict passings of a satellite over a point on the earth during a given time window.
 
         :param birdplan: a BirdPlan object containing a SkyField timescale
-        :param satellite: a Skyfield Satellite object
-        :param location: a Skyfield Topos object 
+        :param satellite: a Skyfield Satellite object representing the satellite we want to track
+        :param location: a Skyfield Topos object representing our Earth-based reference point
         :param window_start: Skyfield Time object; search window start
         :param window_end: Skyfield Time object; search window end
         :param minimum_altitude: exclude passes peaking below this altitude
@@ -115,9 +119,10 @@ class PassQuery:
         alt_f = lambda t: self.diff.at(t).altaz()[0].degrees
 
         self.orbit_period_per_minute = (2.0 * np.pi) / self.satellite.model.no
-        self.window_revolutions = (window_end - window_start) / (self.orbit_period_per_minute / 24.0 / 60.0)
+        self.window_width = window_end - window_start
+        self.window_revolutions = self.window_width / (self.orbit_period_per_minute / 24.0 / 60.0)
         self.sample_points = int(math.ceil(self.window_revolutions * 6.0))
-        self.sample_step = (window_end - window_start) / self.sample_points
+        self.sample_step = self.window_width / self.sample_points
         self.sample_time_range = self.birdplan.timescale.tai_jd([
             window_start.tai + (_ * self.sample_step)
             for _ in range(self.sample_points)
@@ -130,9 +135,9 @@ class PassQuery:
 
         minus_alt_f_wrapper = lambda t: -alt_f(self.birdplan.timescale.tai_jd(t))
         find_highest = lambda t: optimize.minimize_scalar(
-                minus_alt_f_wrapper
-                , bracket=[t.tai + self.sample_step, t.tai - self.sample_step]
-                , tol=(1.0 / 24.0 / 60.0 / 60.0) / t.tai
+            minus_alt_f_wrapper
+            , bracket=[t.tai + self.sample_step, t.tai - self.sample_step]
+            , tol=(1.0 / 24.0 / 60.0 / 60.0) / t.tai
         ).x
 
         self.t_highest = self.birdplan.timescale.tai_jd([
@@ -155,9 +160,15 @@ class PassQuery:
 
         self.passes = list(zip(rising, filtered_peaks, setting))
 
-def pass_query_wrapper(satellite_name, maidenhead, window_start, window_days, minimum_altitude, birdplan=None):
+def pass_query_wrapper(
+        satellite_name
+        , maidenhead
+        , window_start
+        , window_days
+        , minimum_altitude
+        , birdplan=None):
     '''Call PassQuery with skyfield API objects.
-    
+
     :param satellite: the name of a satellite in the TLE file
     :param maidenhead: Earth reference location
     :param window_start: starting time window to search for passes (Y, m, d) tuple
@@ -172,4 +183,10 @@ def pass_query_wrapper(satellite_name, maidenhead, window_start, window_days, mi
     window_minutes = 24.0 * 60.0 * window_days
     time_range = birdplan.timescale.utc(*window_start, 0, range(int(window_minutes)))
 
-    return PassQuery(birdplan, birdplan.tle[satellite_name], topos, time_range[0], time_range[-1], minimum_altitude)
+    return PassQuery(
+        birdplan
+        , birdplan.tle[satellite_name]
+        , topos
+        , time_range[0]
+        , time_range[-1]
+        , minimum_altitude)
