@@ -253,9 +253,16 @@ class Message:
     def __str__(self):
         return self.render()
 
-def web_query_wrapper(query_string):
+def web_query_wrapper(query_string, window_start_datetime, window_days=None):
     '''Given a query string, prepare results that can go to JSON or HTML.
+
+    :param query_string: dict representing parsed query string with list values
+    :param window_start_datetime: beginning of window to search for passes
+    :param window_days: number of days to search (default 3)
     '''
+    if not window_days:
+        window_days = 3
+
     messages = []
     t0 = datetime.now(timezone.utc)
 
@@ -291,8 +298,8 @@ def web_query_wrapper(query_string):
         )
 
     # [now, now + 5 days]
-    start_time = global_birdplan.timescale.utc(datetime.now(timezone.utc))
-    end_time = global_birdplan.timescale.tai_jd(start_time.tai + 5)
+    start_time = global_birdplan.timescale.utc(window_start_datetime)
+    end_time = global_birdplan.timescale.tai_jd(start_time.tai + window_days)
 
     topos = None
     try:
@@ -316,21 +323,25 @@ def web_query_wrapper(query_string):
     except KeyError:
         messages.append(Message('No satellites specified', True))
 
-    results = [
-        (
-            satellite_name
-            , PassQuery(
-                global_birdplan
-                , global_birdplan.tle[satellite_name]
-                , topos
-                , start_time
-                , end_time
-                , minimum_altitude)
-        )
-        if satellite_name in global_birdplan.tle
-        else (satellite_name, None)
-        for satellite_name in satellite_names
-    ]
+    results = []
+    try:
+        results = [
+            (
+                satellite_name
+                , PassQuery(
+                    global_birdplan
+                    , global_birdplan.tle[satellite_name]
+                    , topos
+                    , start_time
+                    , end_time
+                    , minimum_altitude)
+            )
+            if satellite_name in global_birdplan.tle
+            else (satellite_name, None)
+            for satellite_name in satellite_names
+        ]
+    except Exception as ex:
+        messages.append(Message('PassQuery exception: {}'.format(str(ex)), True))
 
     missing_birds = set(satellite_names) - set(global_birdplan.tle.keys())
     if missing_birds:
@@ -360,11 +371,11 @@ def make_pass_tuples(results):
                 yield (bird, passquery, *_pass)
 
 
-def html_web_wrapper(query_string):
+def html_web_wrapper(query_string, now):
     '''Do a query and return the results in an HTML table.
     '''
 
-    results = web_query_wrapper(query_string)
+    results = web_query_wrapper(query_string, now)
 
     yield '<ul>'
     for message in results['messages']:
@@ -372,13 +383,13 @@ def html_web_wrapper(query_string):
     yield '</ul>'
 
     yield '<table border="1">'
-    yield '<tr><th rowspan=2>Bird<th rowspan=2>Max El<th rowspan=2>Duration (Minutes)<th colspan=3>Azimuth<th colspan=3>{}<th colspan=3>UTC'.format(results['tzname'])
-    yield '<tr><th>AOS<th>TCA<th>LOS<th>AOS<th>TCA<th>LOS<th>AOS<th>TCA<th>LOS'
+    yield '<tr><th rowspan=2>Bird<th rowspan=2>Max El<th rowspan=2>Duration (Minutes)<th colspan=3>Azimuth<th colspan=3>{}<th colspan=3>UTC<th colspan=2>TLE Epoch'.format(results['tzname'])
+    yield '<tr><th>AOS<th>TCA<th>LOS<th>AOS<th>TCA<th>LOS<th>AOS<th>TCA<th>LOS<th>Timestamp<th>Age'
 
     sorted_passes = sorted(make_pass_tuples(results['results']), key=lambda r: r[2].tai)
 
     long_strftime = '%Y-%m-%d %H:%M:%S %Z'
-    short_strftime= '%H:%M:%S'
+    short_strftime = '%H:%M:%S'
 
     for _pass in sorted_passes:
         bird, pq, aos, tca, los = _pass
@@ -396,12 +407,8 @@ def html_web_wrapper(query_string):
             , aos.astimezone(pytz.UTC).strftime(long_strftime)
             , tca.astimezone(pytz.UTC).strftime(short_strftime)
             , los.astimezone(pytz.UTC).strftime(short_strftime)
-#            , aos.astimezone(results['tz']).isoformat()
-#            , tca.astimezone(results['tz']).isoformat()
-#            , los.astimezone(results['tz']).isoformat()
-#            , aos.astimezone(pytz.UTC).isoformat()
-#            , tca.astimezone(pytz.UTC).isoformat()
-#            , los.astimezone(pytz.UTC).isoformat()
+            , pq.satellite.epoch.astimezone(pytz.UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
+            , str(pq.birdplan.timescale.utc(now).astimezone(pytz.UTC) - pq.satellite.epoch.astimezone(pytz.UTC))
         ])
 
     yield '</table>'
@@ -409,9 +416,48 @@ def html_web_wrapper(query_string):
 def application(env, start_response):
     '''uWSGI handler.
     '''
+    encoding = 'utf-8'
     keys = parse.parse_qs(env['QUERY_STRING'])
-    start_response('200 OK', [('Content-Type', 'text/html; charset=utf-8')])
-    return [bytes(_, 'utf-8') for _ in html_web_wrapper(keys)]
+    start_response('200 OK', [('Content-Type', 'text/html; charset={}'.format(encoding))])
+    yield bytes('''
+    <!DOCTYPE html>
+    <html>
+        <head>
+            <title>birdplan</title>
+            <meta charset="utf-8" />
+        </head>
+        <body>
+            <h1>birdplan</h1>
+            <form method="get">
+                <h2>Query bird passes</h2>
+                <ul class="birdqueryform">
+                    <li>Earth reference/QTH: <input name="maidenhead" type="text" maxlength="6" placeholder="FN03hp" value="{}" /> (<a href='http://www.levinecentral.com/ham/grid_square.php' target="_blank">find yourself</a>)
+                    <li>Bird minimum peak altitude: <input name="alt" type="number" min="1" max="90" value="{}" placeholder="30" /> degrees above the horizon
+                    <li>Birds:<p><select name="sat" multiple size=8>
+    '''.format(
+        keys['maidenhead'][0] if 'maidenhead' in keys else ''
+        , keys['alt'][0] if 'alt' in keys else ''
+    ), encoding)
+
+    sats = set(keys.get('sat', []))
+
+    for sat in sorted(set(global_birdplan.tle.values()), key=lambda s: s.name):
+        yield bytes('<option value="{0}" {1}>{0}</option>'.format(sat.name, 'selected' if sat.name in sats else ''), encoding)
+
+    yield bytes('''
+                        </select>
+                    <li><input type="submit" value="Search" />
+                </ul>
+            </form>
+    ''', encoding)
+
+    if keys:
+        yield from [bytes(_, encoding) for _ in html_web_wrapper(keys, datetime.now(timezone.utc))]
+
+    yield bytes('''
+        </body>
+    </html>
+    ''', encoding)
 
 # this is meant to be shared across uWSGI application() invocations
 tzwhere = tzwhere.tzwhere()
