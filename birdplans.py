@@ -85,10 +85,10 @@ class BirdPlan:
         '''
         self.tle[alias] = self.tle[satellite]
 
-    def query_point_in_time(self, bird, maidenhead, when):
-        '''Find the altitude, azimuth, and distance of bird with respect to maidenhead at time.
+    def query_point_in_time(self, bird, grid, when):
+        '''Find the altitude, azimuth, and distance of bird with respect to Maidenhead grid at time.
         '''
-        where = mh.toLoc(maidenhead)
+        where = mh.toLoc(grid)
         diff = self.tle[bird] - Topos(*where)
         topocentric = diff.at(when)
         return BirdPlanResults(where, topocentric)
@@ -173,7 +173,7 @@ class PassQuery:
 
 def pass_query_wrapper(
         satellite_name
-        , maidenhead
+        , grid
         , window_start
         , window_days
         , minimum_altitude
@@ -181,7 +181,7 @@ def pass_query_wrapper(
     '''Call PassQuery with skyfield API objects.
 
     :param satellite: the name of a satellite in the TLE file
-    :param maidenhead: Earth reference location
+    :param grid: Earth reference location (Maidenhead grid)
     :param window_start: starting time window to search for passes (Y, m, d) tuple
     :param window_days: how many days to search for -- more than a week does not usually make sense
     :param minimum_altitude: minimum peak altitude pass filter
@@ -190,7 +190,7 @@ def pass_query_wrapper(
     if birdplan is None:
         birdplan = BirdPlan()
 
-    topos = Topos(*mh.toLoc(maidenhead))
+    topos = Topos(*mh.toLoc(grid))
     window_minutes = 24.0 * 60.0 * window_days
     time_range = birdplan.timescale.utc(*window_start, 0, range(int(window_minutes)))
 
@@ -204,14 +204,14 @@ def pass_query_wrapper(
 
 def multibird_pass_query_wrapper(
         satellite_names
-        , maidenhead
+        , grid
         , window_start
         , window_days
         , minimum_altitude):
     '''Call PassQuery with several birds, sorting the results by rising time.
 
     :param satellite_names: iterable of satellite names in birdplan.tle
-    :param maidenhead: maidenhead grid locator for earth reference point
+    :param grid: Maidenhead grid locator for earth reference point
     :param window_start: (year, month, day) tuple to start searching from
     :param window_days: number of days to query passes for
     :param minimum_altitude: minimum peak elevation to query
@@ -228,7 +228,7 @@ def multibird_pass_query_wrapper(
             , PassQuery(
                 birdplan
                 , birdplan.tle[satellite_name]
-                , Topos(*mh.toLoc(maidenhead))
+                , Topos(*mh.toLoc(grid))
                 , time_range[0]
                 , time_range[-1]
                 , minimum_altitude)
@@ -266,16 +266,16 @@ def web_query_wrapper(query_string, window_start_datetime, window_days=None):
     messages = []
     t0 = datetime.now(timezone.utc)
 
-    maidenhead = None
+    grid = None
     try:
-        maidenhead = query_string['maidenhead'][0]
+        grid = query_string['grid'][0]
     except KeyError:
-        messages.append(Message("Missing key 'maidenhead'", True))
+        messages.append(Message("Missing key 'grid'", True))
 
     try:
-        latlng = mh.toLoc(maidenhead)
+        latlng = mh.toLoc(grid)
     except Exception as ex:
-        messages.append(Message("Exception decoding maidenhead: {}".format(str(ex)), True))
+        messages.append(Message("Exception decoding grid: {}".format(str(ex)), True))
 
     tzname = 'UTC'
     try:
@@ -350,7 +350,7 @@ def web_query_wrapper(query_string, window_start_datetime, window_days=None):
     t1 = datetime.now(timezone.utc)
 
     return {
-        'maidenhead': maidenhead,
+        'grid': grid,
         'tzname': tzname,
         'topos': topos,
         'start_time': start_time,
@@ -413,6 +413,8 @@ def html_web_wrapper(query_string, now):
 
     yield '</table>'
 
+    yield '<p>Time to find passes: {}'.format(results['query_time'])
+
 def application(env, start_response):
     '''uWSGI handler.
     '''
@@ -431,11 +433,11 @@ def application(env, start_response):
             <form method="get">
                 <h2>Query bird passes</h2>
                 <ul class="birdqueryform">
-                    <li>Earth reference/QTH: <input name="maidenhead" type="text" maxlength="6" placeholder="FN03hp" value="{}" /> (<a href='http://www.levinecentral.com/ham/grid_square.php' target="_blank">find yourself</a>)
+                    <li>Grid earth reference/QTH: <input name="grid" type="text" maxlength="8" placeholder="FN03hp" value="{}" /> (<a href='http://www.levinecentral.com/ham/grid_square.php' target="_blank">find yourself</a>)
                     <li>Bird minimum peak altitude: <input name="alt" type="number" min="1" max="90" value="{}" placeholder="30" /> degrees above the horizon
                     <li>Birds:<p><select name="sat" multiple size=8>
     '''.format(
-        keys['maidenhead'][0] if 'maidenhead' in keys else ''
+        keys['grid'][0] if 'grid' in keys else ''
         , keys['alt'][0] if 'alt' in keys else ''
     ), encoding)
 
