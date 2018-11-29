@@ -1,0 +1,94 @@
+{
+  "sources": {
+    "amateur.txt": {
+      "url": "https://www.celestrak.com/NORAD/elements/amateur.txt"
+    },
+    "resource.txt": {
+      "url": "https://www.celestrak.com/NORAD/elements/resource.txt"
+    },
+    "cubesat.txt": {
+      "url": "https://www.celestrak.com/NORAD/elements/cubesat.txt"
+    },
+    "active.txt": {
+      "url": "https://www.celestrak.com/NORAD/elements/active.txt"
+    },
+    "nasa.all": {
+      "url": "http://www.amsat.org/amsat/ftp/keps/current/nasa.all"
+    }
+  },
+  "birds": {
+    "AO-7": {
+      "source": "amateur.txt",
+      "name": "OSCAR 7 (AO-7)"
+    },
+    "AO-73": {
+      "source": "amateur.txt",
+      "name": "FUNCUBE-1 (AO-73)"
+    },
+    "CAS-4B": {
+      "source": "resource.txt",
+      "name": "ZHUHAI-1 02 (CAS 4B)"
+    },
+    "EO-88": {
+      "source": "amateur.txt",
+      "name": "NAYIF-1 (EO-88)"
+    },
+    "UKUBE-1": {
+      "source": "amateur.txt",
+      "name": "UKUBE-1"
+    },
+    "XW-2A": {
+      "source": "amateur.txt",
+      "name": "XW-2A"
+    },
+    "XW-2B": {
+      "source": "amateur.txt",
+      "name": "XW-2B"
+    },
+    "XW-2C": {
+      "source": "amateur.txt",
+      "name": "XW-2C"
+    },
+    "XW-2D": {
+      "source": "amateur.txt",
+      "name": "XW-2D"
+    },
+    "XW-2F": {
+      "source": "amateur.txt",
+      "name": "XW-2F"
+    },
+    "FO-29": {
+      "source": "amateur.txt",
+      "name": "JAS-2 (FO-20)"
+    },
+    "Fox-1E": {
+      "name": "Fox-1E"
+    },
+    "SO-50": {
+      "source": "amateur.txt",
+      "name": "SAUDISAT 1C (SO-50)"
+    },
+    "LilacSat2": {
+      "source": "amateur.txt",
+      "name": "LILACSAT 2"
+    },
+    "AO-85": {
+      "source": "nasa.all",
+      "name": "AO-85"
+    },
+    "AO-91": {
+      "source": "amateur.txt",
+      "name": "RADFXSAT (FOX-1B)"
+    },
+    "AO-92": {
+      "source": "amateur.txt",
+      "name": "FOX-1D (AO-92)"
+    },
+    "Fox-1Cliff": {
+      "name": "Fox-1Cliff"
+    },
+    "ESEO": {
+      "name": "ESEO"
+    }
+  }
+}
