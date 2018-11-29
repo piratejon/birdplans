@@ -92,7 +92,7 @@ class TestBirdPlan(unittest.TestCase):
 class TleManager:
     '''keep the TLE files updated'''
 
-    def __init__(self, tlesrcfile):
+    def __init__(self, tlesrcfile, tledb=None):
         '''load up a birdlist
 
         :param tlesrcfile: JSON file linking the birds to their TLEs
@@ -100,12 +100,23 @@ class TleManager:
         with open(tlesrcfile, 'r') as fin:
             self.tlesrcs = json.load(fin)
 
+        self.tledb = 'tlewwwdb.json' if tledb is None else tledb
+
+        self.tle = self.load(self.tledb)
+
+    def load(self, tlefile):
+        '''load the current tle data
+        '''
+
+        with open(self.tledb, 'r') as fin:
+            wwwdb = json.load(fin)
+
     def update(self):
         '''update the tles if needed
         '''
         try:
-            with open('tlewwwdb.json', 'r') as tlefile:
-                wwwdb = json.load(tlefile)
+            with open(self.tledb, 'r') as fin:
+                wwwdb = json.load(fin)
         except FileNotFoundError:
             wwwdb = {}
 
@@ -145,8 +156,8 @@ class TleManager:
 
             wwwdb[source] = wsrc
 
-        with open('tlewwwdb.json', 'w') as tlefile:
-            json.dump(wwwdb, tlefile)
+        with open(self.tledb, 'w') as fout:
+            json.dump(wwwdb, fout)
 
 
 class BirdPlanResults:
