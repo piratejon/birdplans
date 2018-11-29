@@ -10,18 +10,22 @@ predict upcoming satellite passes at a given location
 
 import unittest
 import math
+import json
 import html
 
 from datetime import datetime, timezone
 
 from urllib import parse
 
-from skyfield.api import load, Topos
-import maidenhead as mh
-from scipy import optimize
-import numpy as np
-from tzwhere import tzwhere
+import requests
 import pytz
+
+import maidenhead as mh
+import numpy as np
+
+from skyfield.api import load, Topos
+from scipy import optimize
+from tzwhere import tzwhere
 
 class TestBirdPlan(unittest.TestCase):
     '''exercise the various functions in birdplan'''
@@ -60,6 +64,90 @@ class TestBirdPlan(unittest.TestCase):
         self.assertEqual(result.passes[0][0].utc_iso(), '2018-11-24T07:53:12Z')
         self.assertEqual(result.passes[7][1].utc_iso(), '2018-11-28T18:43:24Z')
         self.assertEqual(result.passes[7][2].utc_iso(), '2018-11-28T18:49:05Z')
+
+    def test_load_tle_json(self):
+        '''make sure we can parse the curated bird list'''
+        src = 'data/tle/choice_birds.json'
+        tm = TleManager(src)
+        tm.update()
+        self.assertTrue({
+            'AO-7'
+            , 'AO-73'
+            , 'CAS-4B'
+            , 'EO-88'
+            , 'UKUBE-1'
+            , 'XW-2A'
+            , 'XW-2B'
+            , 'XW-2C'
+            , 'XW-2D'
+            , 'XW-2F'
+            , 'FO-29'
+            , 'SO-50'
+            , 'LilacSat2'
+            , 'AO-85'
+            , 'AO-91'
+            , 'AO-92'
+            }.issubset(tm.tles))
+
+class TleManager:
+    '''keep the TLE files updated'''
+
+    def __init__(self, tlesrcfile):
+        '''load up a birdlist
+
+        :param tlesrcfile: JSON file linking the birds to their TLEs
+        '''
+        with open(tlesrcfile, 'r') as fin:
+            self.tlesrcs = json.load(fin)
+
+    def update(self):
+        '''update the tles if needed
+        '''
+        try:
+            with open('tlewwwdb.json', 'r') as tlefile:
+                wwwdb = json.load(tlefile)
+        except FileNotFoundError:
+            wwwdb = {}
+
+        for source in self.tlesrcs['sources']:
+            wsrc = wwwdb.get(source, {})
+            wsrc['current'] = wsrc.get('current', {})
+
+            headers = {}
+            if 'etag' in wsrc['current']:
+                headers['etag'] = wsrc['current']['etag']
+            if 'last-modified' in wsrc['current']:
+                headers['If-Modified-Since'] = wsrc['current']['last-modified']
+
+            response = requests.get(self.tlesrcs['sources'][source]['url'], headers=headers)
+
+            now = datetime.now().astimezone().isoformat()
+
+            wsrc['fetches'] = wsrc.get('fetches', [])
+            wsrc['fetches'].append({
+                'when': now,
+                'status': response.status_code,
+                'text': response.text,
+                'etag': response.headers.get('etag'),
+                'last-modified': response.headers.get('last-modified')
+            })
+
+            wsrc['current']['status'] = response.status_code
+
+            if response.status_code == 200:
+                wsrc['current']['body'] = response.text
+                wsrc['current']['updated'] = now
+
+            if 'etag' in response.headers:
+                wsrc['current']['etag'] = response.headers['etag'] 
+            if 'last-modified' in response.headers:
+                wsrc['current']['last-modified'] = response.headers['last-modified']
+
+            wwwdb[source] = wsrc
+
+        with open('tlewwwdb.json', 'w') as tlefile:
+            json.dump(wwwdb, tlefile)
+
 
 class BirdPlanResults:
     '''results of a birdplan query'''
