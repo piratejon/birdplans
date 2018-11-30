@@ -12,9 +12,9 @@ import unittest
 import math
 import json
 import html
+import sys
 
 from datetime import datetime, timezone
-
 from urllib import parse
 
 import requests
@@ -24,8 +24,8 @@ import maidenhead as mh
 import numpy as np
 
 from skyfield.api import load, Topos
-from scipy import optimize
 from tzwhere import tzwhere
+from scipy import optimize
 
 class TestBirdPlan(unittest.TestCase):
     '''exercise the various functions in birdplan'''
@@ -556,11 +556,24 @@ def application(env, start_response):
         yield from [bytes(_, encoding) for _ in html_web_wrapper(keys, datetime.now(timezone.utc))]
 
     yield bytes('''
+    <!--
+    <p>tip: {}
+    <p>Worker ID: {}
+    -->
+    '''.format(sys.argv[1] if 1 < len(sys.argv) else 'no tip', uwsgi.worker_id()), encoding)
+
+    yield bytes('''
         </body>
     </html>
     ''', encoding)
 
-# this is meant to be shared across uWSGI application() invocations
-tzwhere = tzwhere.tzwhere()
-global_birdplan = BirdPlan()
-global_birdplan.add_satellite_alias('FOX-1B', 'AO-91')
+try:
+    import uwsgi
+    # this is meant to be shared across uWSGI application() invocations
+    tzwhere = tzwhere.tzwhere()
+    global_birdplan = BirdPlan()
+    global_birdplan.add_satellite_alias('FOX-1B', 'AO-91')
+    uwsgi.log('{}'.format(tzwhere))
+    uwsgi.log('{}'.format(global_birdplan))
+except ImportError:
+    pass
