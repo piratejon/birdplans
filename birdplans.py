@@ -68,8 +68,8 @@ class TestBirdPlan(unittest.TestCase):
     def test_load_tle_json(self):
         '''make sure we can parse the curated bird list'''
         src = 'data/tle/choice_birds.json'
-        tm = TleManager(src)
-        tm.update()
+        tleman = TleManager(src)
+        tleman.update()
         self.assertTrue({
             'AO-7'
             , 'AO-73'
@@ -87,20 +87,23 @@ class TestBirdPlan(unittest.TestCase):
             , 'AO-85'
             , 'AO-91'
             , 'AO-92'
-            }.issubset(tm.tles))
+            }.issubset(tleman.tle))
 
 class TleManager:
     '''keep the TLE files updated'''
 
-    def __init__(self, tlesrcfile, tledb=None):
+    def __init__(self, tlesrcfile=None, tledb=None):
         '''load up a birdlist
 
         :param tlesrcfile: JSON file linking the birds to their TLEs
+        :param tledb: JSON file containing the downloaded TLE logs and history
         '''
+
+        self.tlesrcfile = 'data/tle/choice_birds.json' if tlesrcfile is None else tlesrcfile
+        self.tledb = 'tlewwwdb.json' if tledb is None else tledb
+
         with open(tlesrcfile, 'r') as fin:
             self.tlesrcs = json.load(fin)
-
-        self.tledb = 'tlewwwdb.json' if tledb is None else tledb
 
         self.tle = self.load(self.tledb)
 
@@ -150,7 +153,7 @@ class TleManager:
                 wsrc['current']['updated'] = now
 
             if 'etag' in response.headers:
-                wsrc['current']['etag'] = response.headers['etag'] 
+                wsrc['current']['etag'] = response.headers['etag']
             if 'last-modified' in response.headers:
                 wsrc['current']['last-modified'] = response.headers['last-modified']
 
@@ -386,7 +389,9 @@ def web_query_wrapper(query_string, window_start_datetime, window_days=None):
                 Message('Inferring local timezone {} from location {}'.format(tzname, latlng))
             )
         except Exception as ex:
-            messages.append(Message("Exception inferring local timezone': {}".format(str(ex)), True))
+            messages.append(
+                Message("Exception inferring local timezone': {}".format(str(ex)), True)
+            )
 
     tz = pytz.utc
     try:
@@ -482,7 +487,16 @@ def html_web_wrapper(query_string, now):
     yield '</ul>'
 
     yield '<table border="1">'
-    yield '<tr><th rowspan=2>Bird<th rowspan=2>Max El<th rowspan=2>Duration (Minutes)<th colspan=3>Azimuth<th colspan=3>{}<th colspan=3>UTC<th colspan=2>TLE Epoch'.format(results['tzname'])
+    yield '''
+        <tr>
+            <th rowspan=2>Bird
+            <th rowspan=2>Max El
+            <th rowspan=2>Duration (Minutes)
+            <th colspan=3>Azimuth
+            <th colspan=3>{}
+            <th colspan=3>UTC
+            <th colspan=2>TLE Epoch'''.format(results['tzname'])
+
     yield '<tr><th>AOS<th>TCA<th>LOS<th>AOS<th>TCA<th>LOS<th>AOS<th>TCA<th>LOS<th>Timestamp<th>Age'
 
     sorted_passes = sorted(make_pass_tuples(results['results']), key=lambda r: r[2].tai)
@@ -507,7 +521,10 @@ def html_web_wrapper(query_string, now):
             , tca.astimezone(pytz.UTC).strftime(short_strftime)
             , los.astimezone(pytz.UTC).strftime(short_strftime)
             , pq.satellite.epoch.astimezone(pytz.UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
-            , str(pq.birdplan.timescale.utc(now).astimezone(pytz.UTC) - pq.satellite.epoch.astimezone(pytz.UTC))
+            , str(
+                pq.birdplan.timescale.utc(now).astimezone(pytz.UTC) -
+                pq.satellite.epoch.astimezone(pytz.UTC)
+            )
         ])
 
     yield '</table>'
@@ -543,7 +560,11 @@ def application(env, start_response):
     sats = set(keys.get('sat', []))
 
     for sat in sorted(set(global_birdplan.tle.values()), key=lambda s: s.name):
-        yield bytes('<option value="{0}" {1}>{0}</option>'.format(sat.name, 'selected' if sat.name in sats else ''), encoding)
+        yield bytes(
+            '<option value="{0}" {1}>{0}</option>'.format(
+                sat.name, 'selected' if sat.name in sats else ''
+            ), encoding
+        )
 
     yield bytes('''
                         </select>
