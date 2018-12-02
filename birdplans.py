@@ -92,7 +92,7 @@ class TestBirdPlan(unittest.TestCase):
 class TleManager:
     '''keep the TLE files updated'''
 
-    def __init__(self, tlesrcfile=None, tledb=None):
+    def __init__(self, tlesrcfile=None, tledbcurrent=None, tledbhistory=None):
         '''load up a birdlist
 
         :param tlesrcfile: JSON file linking the birds to their TLEs
@@ -100,12 +100,13 @@ class TleManager:
         '''
 
         self.tlesrcfile = 'data/tle/choice_birds.json' if tlesrcfile is None else tlesrcfile
-        self.tledb = 'tlewwwdb.json' if tledb is None else tledb
+        self.tledbcurrent = 'tledbcurrent.json' if tledbcurrent is None else tledbcurrent
+        self.tledbhistory = 'tledbhistory.json' if tledbhistory is None else tledbhistory
 
-        with open(tlesrcfile, 'r') as fin:
+        with open(self.tlesrcfile, 'r') as fin:
             self.tlesrcs = json.load(fin)
 
-        self.tle = self.load(self.tledb)
+        #self.tle = self.load(self.tledbcurrent)
 
     def load(self, tlefile):
         '''load the current tle data
@@ -114,53 +115,64 @@ class TleManager:
         with open(self.tledb, 'r') as fin:
             wwwdb = json.load(fin)
 
-    def update(self):
+    def update(self, keep_history=True):
         '''update the tles if needed
         '''
         try:
-            with open(self.tledb, 'r') as fin:
-                wwwdb = json.load(fin)
+            with open(self.tledbcurrent, 'r') as fin:
+                wwwdbcurrent = json.load(fin)
         except FileNotFoundError:
-            wwwdb = {}
+            wwwdbcurrent = {}
+
+        try:
+            with open(self.tledbhistory, 'r') as fin:
+                wwwdbhistory = json.load(fin)
+        except FileNotFoundError:
+            wwwdbhistory = {}
 
         for source in self.tlesrcs['sources']:
-            wsrc = wwwdb.get(source, {})
-            wsrc['current'] = wsrc.get('current', {})
+            wsrc = wwwdbcurrent.get(source, {})
 
             headers = {}
-            if 'etag' in wsrc['current']:
-                headers['etag'] = wsrc['current']['etag']
-            if 'last-modified' in wsrc['current']:
-                headers['If-Modified-Since'] = wsrc['current']['last-modified']
+            if 'etag' in wsrc:
+                headers['etag'] = wsrc['etag']
+            if 'last-modified' in wsrc:
+                headers['If-Modified-Since'] = wsrc['last-modified']
 
             response = requests.get(self.tlesrcs['sources'][source]['url'], headers=headers)
 
             now = datetime.now().astimezone().isoformat()
 
-            wsrc['fetches'] = wsrc.get('fetches', [])
-            wsrc['fetches'].append({
-                'when': now,
-                'status': response.status_code,
-                'text': response.text,
-                'etag': response.headers.get('etag'),
-                'last-modified': response.headers.get('last-modified')
-            })
-
-            wsrc['current']['status'] = response.status_code
+            wsrc['checked'] = now
+            wsrc['status'] = response.status_code
 
             if response.status_code == 200:
-                wsrc['current']['body'] = response.text
-                wsrc['current']['updated'] = now
+                wsrc['body'] = response.text
+                wsrc['updated'] = now
 
             if 'etag' in response.headers:
-                wsrc['current']['etag'] = response.headers['etag']
+                wsrc['etag'] = response.headers['etag']
             if 'last-modified' in response.headers:
-                wsrc['current']['last-modified'] = response.headers['last-modified']
+                wsrc['last-modified'] = response.headers['last-modified']
 
-            wwwdb[source] = wsrc
+            wwwdbcurrent[source] = wsrc
 
-        with open(self.tledb, 'w') as fout:
-            json.dump(wwwdb, fout)
+            if keep_history:
+                wwwdbhistory[source] = wwwdbhistory.get(source, [])
+                wwwdbhistory[source].append({
+                    'when': now,
+                    'status': response.status_code,
+                    'text': response.text,
+                    'etag': response.headers.get('etag'),
+                    'last-modified': response.headers.get('last-modified')
+                })
+
+        with open(self.tledbcurrent, 'w') as fout:
+            json.dump(wwwdbcurrent, fout)
+
+        if keep_history:
+            with open(self.tledbhistory, 'w') as fout:
+                json.dump(wwwdbhistory, fout)
 
 
 class BirdPlanResults:
