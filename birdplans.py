@@ -514,6 +514,11 @@ def make_pass_tuples(results):
             for _pass in passquery.passes:
                 yield (bird, passquery, *_pass)
 
+def time_delta_minutes_seconds(timedelta):
+    '''format a timedelta since python forgot
+    '''
+    seconds = timedelta.total_seconds()
+    return '{}:{:02d}'.format(int(seconds / 60), int(seconds % 60))
 
 def html_web_wrapper(query_string, now):
     '''Do a query and return the results in an HTML table.
@@ -531,7 +536,7 @@ def html_web_wrapper(query_string, now):
         <tr>
             <th rowspan=2>Bird
             <th rowspan=2>Max El
-            <th rowspan=2>Duration (Minutes)
+            <th rowspan=2>Duration (mm:ss)
             <th colspan=3>Azimuth
             <th colspan=3>{}
             <th colspan=3>UTC
@@ -541,31 +546,35 @@ def html_web_wrapper(query_string, now):
 
     sorted_passes = sorted(make_pass_tuples(results['results']), key=lambda r: r[2].tai)
 
-    long_strftime = '%Y-%m-%d %H:%M:%S %Z'
-    short_strftime = '%H:%M:%S'
+    formats = {
+        'long_strftime': '%Y-%m-%d %H:%M %Z',
+        'short_strftime': '%H:%M',
+        'degrees': '{:.0f}\u00b0',
+    }
 
+    previous_pass_aos = None
     for _pass in sorted_passes:
         bird, pq, aos, tca, los = _pass
         yield '<tr>' + ''.join('<td>{}'.format(html.escape(_)) for _ in [
             bird
-            , '{:.2f}'.format(pq.altaz(tca)[0].degrees)
-            #, '{:.2f}'.format((los - aos) * 24.0 * 60.0)
-            , str(los.astimezone(pytz.UTC) - aos.astimezone(pytz.UTC))
-            , '{:.2f}'.format(pq.altaz(aos)[1].degrees)
-            , '{:.2f}'.format(pq.altaz(tca)[1].degrees)
-            , '{:.2f}'.format(pq.altaz(los)[1].degrees)
-            , aos.astimezone(results['tz']).strftime(long_strftime)
-            , tca.astimezone(results['tz']).strftime(short_strftime)
-            , los.astimezone(results['tz']).strftime(short_strftime)
-            , aos.astimezone(pytz.UTC).strftime(long_strftime)
-            , tca.astimezone(pytz.UTC).strftime(short_strftime)
-            , los.astimezone(pytz.UTC).strftime(short_strftime)
+            , formats['degrees'].format(pq.altaz(tca)[0].degrees)
+            , time_delta_minutes_seconds(los.astimezone(pytz.UTC) - aos.astimezone(pytz.UTC))
+            , formats['degrees'].format(pq.altaz(aos)[1].degrees)
+            , formats['degrees'].format(pq.altaz(tca)[1].degrees)
+            , formats['degrees'].format(pq.altaz(los)[1].degrees)
+            , aos.astimezone(results['tz']).strftime(formats['long_strftime'])
+            , tca.astimezone(results['tz']).strftime(formats['short_strftime'])
+            , los.astimezone(results['tz']).strftime(formats['short_strftime'])
+            , aos.astimezone(pytz.UTC).strftime(formats['long_strftime'])
+            , tca.astimezone(pytz.UTC).strftime(formats['short_strftime'])
+            , los.astimezone(pytz.UTC).strftime(formats['short_strftime'])
             , pq.satellite.epoch.astimezone(pytz.UTC).strftime('%Y-%m-%dT%H:%M:%SZ')
             , str(
                 pq.birdplan.timescale.utc(now).astimezone(pytz.UTC) -
                 pq.satellite.epoch.astimezone(pytz.UTC)
             )
         ])
+        previous_pass_aos = aos
 
     yield '</table>'
 
