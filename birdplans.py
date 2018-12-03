@@ -24,6 +24,8 @@ import maidenhead as mh
 import numpy as np
 
 from skyfield.api import load, Topos
+from skyfield.functions import BytesIO
+from skyfield.iokit import parse_tle
 from tzwhere import tzwhere
 from scipy import optimize
 
@@ -32,43 +34,47 @@ class TestBirdPlan(unittest.TestCase):
 
     def test_birdplan_init(self):
         '''exercise birdplan constructor and alias'''
-        plan = BirdPlan()
+        plan = BirdPlan(
+            TleManager(
+                tledbcurrent='test/tledbcurrent.json', tledbhistory='test/tledbhistory.json'
+            )
+        )
 
         # check initialization stuff
-        self.assertEqual(plan.tle_file, 'data/tle/amateur.txt')
         self.assertTrue('SO-50' in plan.tle)
-        self.assertTrue('FOX-1B' in plan.tle)
-        self.assertFalse('AO-91' in plan.tle)
-        plan.add_satellite_alias('FOX-1B', 'AO-91')
         self.assertTrue('AO-91' in plan.tle)
 
     def test_query_point_in_time(self):
         '''do what we're supposed to do'''
-        plan = BirdPlan()
+        plan = BirdPlan(
+            TleManager(
+                tledbcurrent='test/tledbcurrent.json', tledbhistory='test/tledbhistory.json'
+            )
+        )
 
         results = plan.query_point_in_time(
             'SO-50', 'EM15ek', plan.timescale.utc(2018, 11, 19, 2, 11, 0)
         )
         self.assertAlmostEqual(results.latlng[0], 35.41667, places=5)
         self.assertAlmostEqual(results.latlng[1], -97.66667, places=5)
-        self.assertAlmostEqual(results.alt.degrees, 26.71944, places=5)
-        self.assertAlmostEqual(results.azimuth.degrees, 196.69795, places=5)
-        self.assertAlmostEqual(results.distance, 1244.45630, places=5)
+        self.assertAlmostEqual(results.alt.degrees, 26.72131, places=5)
+        self.assertAlmostEqual(results.azimuth.degrees, 196.76474, places=5)
+        self.assertAlmostEqual(results.distance, 1242.43479, places=5)
 
     def test_pass_query(self):
         '''exercise querying a pass'''
 
         # find 30-degree-plus passes of AO-91 (FOX-1B) over EM15 upto 5 days after 2018-11-24
-        result = pass_query_wrapper('FOX-1B', 'EM15', (2018, 11, 24), 5, 30.0)
+        result = pass_query_wrapper('AO-91', 'EM15', (2018, 11, 24), 5, 30.0)
         self.assertEqual(len(result.passes), 8)
         self.assertEqual(result.passes[0][0].utc_iso(), '2018-11-24T07:53:12Z')
-        self.assertEqual(result.passes[7][1].utc_iso(), '2018-11-28T18:43:24Z')
+        self.assertEqual(result.passes[7][1].utc_iso(), '2018-11-28T18:43:25Z')
         self.assertEqual(result.passes[7][2].utc_iso(), '2018-11-28T18:49:05Z')
 
     def test_load_tle_json(self):
         '''make sure we can parse the curated bird list'''
         src = 'data/tle/choice_birds.json'
-        tleman = TleManager(src)
+        tleman = TleManager(src, 'test/tledbcurrent.json', 'test/tledbhistory.json')
         self.assertTrue({
             'AO-7'
             , 'AO-73'
@@ -124,7 +130,8 @@ class TleManager:
                     lineiter = iter(lines)
                     for line in lineiter:
                         if bird['name'] == line.strip():
-                            bird_tles[birdname] = next(lineiter) + '\n' + next(lineiter)
+                            bird_tles[birdname] = ((birdname + (' ' * 24))[:24]) + \
+                                '\n' + next(lineiter) + '\n' + next(lineiter)
                             break
 
         return bird_tles
@@ -200,11 +207,15 @@ class BirdPlanResults:
 class BirdPlan:
     '''interface for bird planning'''
 
-    def __init__(self, tle_file='data/tle/amateur.txt'):
+    def __init__(self, tlemanager):
         '''Initialize persistent state.
         '''
-        self.tle_file = tle_file
-        self.tle = load.tle(tle_file)
+        self.tlemanager = tlemanager
+        self.tle = {}
+        for names, sat in parse_tle(BytesIO(bytes(tlemanager.tlestring, 'ascii'))):
+            self.tle[sat.model.satnum] = sat
+            for name in names:
+                self.tle[name] = sat
         self.timescale = load.timescale()
 
     def add_satellite_alias(self, satellite, alias):
@@ -315,7 +326,11 @@ def pass_query_wrapper(
     :param birdplan: an BirdPlan object, if None then a new one will be created.
     '''
     if birdplan is None:
-        birdplan = BirdPlan()
+        birdplan = BirdPlan(
+            TleManager(
+                tledbcurrent='test/tledbcurrent.json', tledbhistory='test/tledbhistory.json'
+            )
+        )
 
     topos = Topos(*mh.toLoc(grid))
     window_minutes = 24.0 * 60.0 * window_days
@@ -344,7 +359,7 @@ def multibird_pass_query_wrapper(
     :param minimum_altitude: minimum peak elevation to query
     '''
 
-    birdplan = BirdPlan()
+    birdplan = BirdPlan(TleManager())
 
     window_minutes = 24.0 * 60.0 * window_days
     time_range = birdplan.timescale.utc(*window_start, 0, range(int(window_minutes)))
@@ -617,9 +632,7 @@ try:
     import uwsgi
     # this is meant to be shared across uWSGI application() invocations
     tzwhere = tzwhere.tzwhere()
-    global_birdplan = BirdPlan()
-    global_birdplan.add_satellite_alias('FOX-1B', 'AO-91')
-    uwsgi.log('{}'.format(tzwhere))
-    uwsgi.log('{}'.format(global_birdplan))
+    global_birdplan = BirdPlan(TleManager())
 except ImportError:
+    # will any tests require tzwhere?
     pass
