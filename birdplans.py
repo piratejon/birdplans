@@ -69,7 +69,6 @@ class TestBirdPlan(unittest.TestCase):
         '''make sure we can parse the curated bird list'''
         src = 'data/tle/choice_birds.json'
         tleman = TleManager(src)
-        tleman.update()
         self.assertTrue({
             'AO-7'
             , 'AO-73'
@@ -87,7 +86,7 @@ class TestBirdPlan(unittest.TestCase):
             , 'AO-85'
             , 'AO-91'
             , 'AO-92'
-            }.issubset(tleman.tle))
+            }.issubset(tleman.bird_tles))
 
 class TleManager:
     '''keep the TLE files updated'''
@@ -106,32 +105,47 @@ class TleManager:
         with open(self.tlesrcfile, 'r') as fin:
             self.tlesrcs = json.load(fin)
 
-        #self.tle = self.load(self.tledbcurrent)
+        self.bird_tles = self.load()
+        # this has the tle with our aliases
+        self.tlestring = '\n'.join([key + '\n' + value for key, value in self.bird_tles.items()])
 
-    def load(self, tlefile):
-        '''load the current tle data
+    def load(self):
+        '''load the current tle data into a dict of {bird_alias: 'tle\nlines'}
         '''
 
-        with open(self.tledb, 'r') as fin:
-            wwwdb = json.load(fin)
+        with open(self.tledbcurrent, 'r') as fin:
+            tledbcurrent = json.load(fin)
+
+        bird_tles = {}
+        for source in self.tlesrcs['sources']:
+            lines = tledbcurrent[source]['body'].splitlines()
+            for birdname, bird in self.tlesrcs['birds'].items():
+                if 'source' in bird and bird['source'] == source:
+                    lineiter = iter(lines)
+                    for line in lineiter:
+                        if bird['name'] == line.strip():
+                            bird_tles[birdname] = next(lineiter) + '\n' + next(lineiter)
+                            break
+
+        return bird_tles
 
     def update(self, keep_history=True):
         '''update the tles if needed
         '''
         try:
             with open(self.tledbcurrent, 'r') as fin:
-                wwwdbcurrent = json.load(fin)
+                tledbcurrent = json.load(fin)
         except FileNotFoundError:
-            wwwdbcurrent = {}
+            tledbcurrent = {}
 
         try:
             with open(self.tledbhistory, 'r') as fin:
-                wwwdbhistory = json.load(fin)
+                tledbhistory = json.load(fin)
         except FileNotFoundError:
-            wwwdbhistory = {}
+            tledbhistory = {}
 
         for source in self.tlesrcs['sources']:
-            wsrc = wwwdbcurrent.get(source, {})
+            wsrc = tledbcurrent.get(source, {})
 
             headers = {}
             if 'etag' in wsrc:
@@ -155,11 +169,11 @@ class TleManager:
             if 'last-modified' in response.headers:
                 wsrc['last-modified'] = response.headers['last-modified']
 
-            wwwdbcurrent[source] = wsrc
+            tledbcurrent[source] = wsrc
 
             if keep_history:
-                wwwdbhistory[source] = wwwdbhistory.get(source, [])
-                wwwdbhistory[source].append({
+                tledbhistory[source] = tledbhistory.get(source, [])
+                tledbhistory[source].append({
                     'when': now,
                     'status': response.status_code,
                     'text': response.text,
@@ -168,12 +182,11 @@ class TleManager:
                 })
 
         with open(self.tledbcurrent, 'w') as fout:
-            json.dump(wwwdbcurrent, fout)
+            json.dump(tledbcurrent, fout)
 
         if keep_history:
             with open(self.tledbhistory, 'w') as fout:
-                json.dump(wwwdbhistory, fout)
-
+                json.dump(tledbhistory, fout)
 
 class BirdPlanResults:
     '''results of a birdplan query'''
