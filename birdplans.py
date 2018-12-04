@@ -162,7 +162,7 @@ class TleManager:
 
             response = requests.get(self.tlesrcs['sources'][source]['url'], headers=headers)
 
-            now = datetime.now().astimezone().isoformat()
+            now = datetime.now(timezone.utc).astimezone().isoformat()
 
             wsrc['checked'] = now
             wsrc['status'] = response.status_code
