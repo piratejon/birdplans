@@ -77,7 +77,7 @@
     },
     "Fox-1Cliff": {
       "name": "Fox-1Cliff",
-      "source": "celestrak/active.txt"
+      "source": "nasa/nasa.all"
     },
     "ESEO": {
       "name": "ESEO"
