@@ -79,8 +79,8 @@
       "name": "FALCONSAT-3",
       "source": "celestrak/active.txt"
     },
-    "Fox-1Cliff": {
-      "name": "Fox-1Cliff",
+    "AO-95": {
+      "name": "AO-95",
       "source": "nasa/nasa.all"
     },
     "ESEO": {
