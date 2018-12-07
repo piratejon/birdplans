@@ -75,6 +75,10 @@
       "source": "celestrak/active.txt",
       "name": "FOX-1D (AO-92)"
     },
+    "FalconSat-3": {
+      "name": "FALCONSAT-3",
+      "source": "celestrak/active.txt"
+    },
     "Fox-1Cliff": {
       "name": "Fox-1Cliff",
       "source": "nasa/nasa.all"
