@@ -15,6 +15,7 @@ import html
 import sys
 
 from datetime import datetime, timezone
+from collections import namedtuple
 from urllib import parse
 
 import requests
@@ -59,7 +60,7 @@ class TestBirdPlan(unittest.TestCase):
         self.assertAlmostEqual(results.latlng[1], -97.66667, places=5)
         self.assertAlmostEqual(results.alt.degrees, 26.72131, places=5)
         self.assertAlmostEqual(results.azimuth.degrees, 196.76474, places=5)
-        self.assertAlmostEqual(results.distance, 1242.43479, places=5)
+        self.assertAlmostEqual(results.distance.km, 1242.43479, places=5)
 
     def test_pass_query(self):
         '''exercise querying a pass'''
@@ -195,14 +196,7 @@ class TleManager:
             with open(self.tledbhistory, 'w') as fout:
                 json.dump(tledbhistory, fout)
 
-class BirdPlanResults:
-    '''results of a birdplan query'''
-
-    def __init__(self, latlng, topocentric):
-        '''set us up the fields'''
-        self.latlng = latlng
-        self.alt, self.azimuth, self.distance = topocentric.altaz()
-        self.distance = self.distance.km
+BirdPlanResults = namedtuple('BirdPlanResults', ['latlng', 'alt', 'azimuth', 'distance'])
 
 class BirdPlan:
     '''interface for bird planning'''
@@ -229,7 +223,7 @@ class BirdPlan:
         where = mh.toLoc(grid)
         diff = self.tle[bird] - Topos(*where)
         topocentric = diff.at(when)
-        return BirdPlanResults(where, topocentric)
+        return BirdPlanResults(where, *(topocentric.altaz()))
 
 class PassQuery:
     '''
@@ -580,10 +574,11 @@ def html_web_wrapper(query_string, now):
 
     yield '<p>Time to find passes: {}'.format(results['query_time'])
 
-def application(env, start_response):
-    '''uWSGI handler.
+def simple_page(env, start_response, encoding):
+    '''simple Web 1.0 page that works great in Links (but not Lynx, sorry, tables!)
+    or otherwise without javascript/modern Web2.0 stuff
     '''
-    encoding = 'utf-8'
+
     keys = parse.parse_qs(env['QUERY_STRING'])
     start_response('200 OK', [('Content-Type', 'text/html; charset={}'.format(encoding))])
     yield bytes('''
@@ -637,6 +632,13 @@ def application(env, start_response):
     </html>
     ''', encoding)
 
+def application(env, start_response):
+    '''uWSGI handler.
+    '''
+    encoding = 'utf-8'
+
+    if True: # simple page
+        yield from simple_page(env, start_response, encoding)
 try:
     import uwsgi
     # this is meant to be shared across uWSGI application() invocations
