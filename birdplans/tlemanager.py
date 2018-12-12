@@ -15,10 +15,11 @@ from datetime import datetime, timezone
 import requests
 
 class TleManager:
-    '''keep the TLE files updated'''
+    '''Keep the TLE files updated.
+    '''
 
     def __init__(self, tlesrcfile=None, tledbcurrent=None, tledbhistory=None):
-        '''load up a birdlist
+        '''load up a birdlist annotated with TLE sources
 
         :param tlesrcfile: JSON file linking the birds to their TLEs
         :param tledb: JSON file containing the downloaded TLE logs and history
@@ -114,3 +115,12 @@ class TleManager:
         if keep_history:
             with open(self.tledbhistory, 'w') as fout:
                 json.dump(tledbhistory, fout)
+
+class TestTleManager(TleManager):
+    '''Test wrapper for TleManager.
+    '''
+
+    def __init__(self):
+        '''Call super with test arguments for convenience.
+        '''
+        super().__init__(None, 'test/tledbcurrent.json', 'test/tledbhistory.json')
