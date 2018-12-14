@@ -90,7 +90,7 @@ def pass_estimation_wrapper(
         , window_start
         , window_days
         , minimum_altitude):
-    '''Call PassQuery with skyfield API objects.
+    '''Call estimate_window_passes with skyfield API objects.
 
     :param birdplan: an BirdPlan object encapsulating global state
     :param satellite_name: the name of a satellite in the TLE file
