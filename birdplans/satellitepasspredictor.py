@@ -89,7 +89,7 @@ def pass_estimation_wrapper(
         , grid
         , window_start
         , window_days
-        , minimum_altitude):
+        , minimum_altitude=None):
     '''Call estimate_window_passes with skyfield API objects.
 
     :param birdplan: an BirdPlan object encapsulating global state
@@ -97,11 +97,13 @@ def pass_estimation_wrapper(
     :param grid: Earth reference location (Maidenhead grid)
     :param window_start: starting time window to search for passes (Y, m, d) tuple
     :param window_days: how many days to search for -- less accuracy beyond a week
-    :param minimum_altitude: minimum peak altitude pass filter
+    :param minimum_altitude: minimum peak altitude pass filter, default 0
     '''
 
     # pylint: disable=too-many-arguments
     # Necessary to avoid passing global state along with parameters.
+
+    minimum_altitude = 0 if minimum_altitude is None else minimum_altitude
 
     window_minutes = 24.0 * 60.0 * window_days
     time_range = birdplan.timescale.utc(*window_start, 0, range(int(window_minutes)))
