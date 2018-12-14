@@ -123,4 +123,4 @@ class TestTleManager(TleManager):
     def __init__(self):
         '''Call super with test arguments for convenience.
         '''
-        super().__init__(None, 'test/tledbcurrent.json', 'test/tledbhistory.json')
+        super().__init__(None, 'data/test/tledbcurrent.json', 'data/test/tledbhistory.json')

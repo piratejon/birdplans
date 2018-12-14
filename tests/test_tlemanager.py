@@ -17,7 +17,7 @@ class TestTleManager(unittest.TestCase):
 
     def test_load_tle_json(self):
         '''make sure we can parse the curated bird list'''
-        tleman = TleManager(None, 'test/tledbcurrent.json', 'test/tledbhistory.json')
+        tleman = TleManager(None, 'data/test/tledbcurrent.json', 'data/test/tledbhistory.json')
         self.assertTrue({
             'AO-7'
             , 'AO-73'
