@@ -11,9 +11,8 @@ uwsgi application wrapper/api endpoint
 import html
 import sys
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from collections import namedtuple
-from tzwhere import tzwhere
 from urllib import parse
 from enum import Enum
 
@@ -63,7 +62,7 @@ class ApiResponse:
     def message(self, severity, format_string, *args):
         '''Append a formatted message to the response.
         '''
-        self.messages.append(Message(format_string.format(args)))
+        self.messages.append(Message(format_string.format(args), severity))
 
     def filtered_messages(self, severity=None):
         '''Return a filtered list of messages meeting the configured severity criteria.
@@ -71,121 +70,68 @@ class ApiResponse:
         severity = self.minimum_severity if severity is None else severity
         return [_ for _ in self.messages if _.severity >= severity]
 
-def birdplan_query_endpoint(query, default):
-    '''Given a query string, estimate passes and return JSON results.
+Parameters = namedtuple(
+    'Parameters'
+    , ['valid', 'grid', 'where', 'tz', 'start_time', 'end_time', 'birds', 'response']
+)
+def params_from_query(query, default):
+    '''Turn a query string dict into parameters suitable for calling the prediction function.
 
     :param query: dict representing parsed query string with list values
     :param default: dict of parameter default values
-    :param response: QueryResponse object containing results and status to caller
     '''
 
-    ###
-    ### loglevel
-    ###
     try:
         response = ApiResponse(Severity[query['loglevel'][0]])
-    except KeyError:
-        try:
-            response = ApiResponse(Severity(int(query['loglevel'][0])))
-        except (KeyError, ValueError):
-            response = ApiResponse()
+    except KeyError: # query[x] or Severity[x] could trigger KeyError
+        response = ApiResponse(default['loglevel'])
 
-    ###
-    ### window_days
-    ###
-    try:
-        window_days = int(query['window_days'][0])
-        response.message(Severity.VERBOSE, 'read {} window_days', window_days)
-    except KeyError:
-        window_days = default['window_days']
-        response.message(Severity.INFO, 'defaulting to {} window_days', window_days)
-    except ValueError as ex:
-        window_days = default['window_days']
-        response.message(
-            Severity.WARNING
-            , 'invalid window_days {}, defaulting to {}'
-            , (query['window_days'][0], window_days)
-        )
-
-    t0 = datetime.now(timezone.utc)
-    response.message(Severity.VERBOSE, 'start time', (t0, ))
-
-    ###
-    ### grid
-    ###
     try:
         grid = query['grid'][0]
     except KeyError:
-        response.message(Severity.ERROR, 'no grid specified')
-        return response
+        response.message(Severity.ERROR, 'mandatory parameter grid not found')
+        return Parameters(valid=False, response=response)
 
-    ###
-    ### latlng
-    ###
     try:
-        latlng = mh.toLoc(grid)
+        where = Topos(*mh.toLoc(grid))
     except (ValueError, AssertionError):
         response.message(Severity.ERROR, 'unable to decode grid {}', grid)
-        return response
-    response.message(Severity.VERBOSE, 'decoded grid {} as {}}', grid, latlng)
+        return Parameters(valid=False, response=response)
 
-    ###
-    ### tzname
-    ###
-    try:
-        grid = query['tz'][0]
-    except KeyError:
-        try:
-            tzname = tzwhere.tzNameAt(*latlng)
-            response.message(Severity.INFO, 'looked up tz {} for {}', tzname, latlng)
-        except KeyError:
-            tzname = defaults['tzname']
-            response.message(
-                Severity.WARNING
-                , 'unable to find tz for {}, defaulting to {}'
-                , latlng, tzname
-            )
+    minimum_altitude = int(query.get('minimum_altitude', [default['minimum_altitude']])[0])
 
-    ###
-    ### tz
-    ###
+    tzname = query.get('tzname', [default['tzname']])[0]
     try:
         tz = pytz.timezone(tzname)
-        response.message(Severity.VERBOSE, 'selected timezone {}', tz)
-    except UnknownTimeZoneError:
-        tz = pytz.timezone(defaults['tz'])
-        response.message(Severity.WARNING, 'unknown timezone {}, defaulting to {}', tzname, tz)
+    except pytz.UnknownTimeZoneError:
+        tz = default['tz']
+        response.message(Severity.WARN, 'invalid tz {}, using default {}', tzname, tz)
 
-    ###
-    ### minimum_altitude
-    ###
     try:
-        minimum_altitude = query['minimum_altitude'][0]
-        response.message(Severity.VERBOSE, 'selected minimum_altitude {}', minimum_altitude)
-    except KeyError:
-        minimum_altitude = defaults['minimum_altitude']
-        response.message(Severity.VERBOSE, 'defaulting to minimum_altitude {}', minimum_altitude)
+        start_time = tz.localize(datetime.strptime(query['start_time'], '%Y-%m-%d %H:%M'))
+    except (KeyError, ValueError):
+        start_time = default['start_time']
+        response.message(Severity.INFO, 'using default start_time {}', start_time)
 
-    ###
-    ### birds
-    ###
     try:
-        birds = set(query['bird'])
+        end_time = tz.localize(datetime.strptime(query['end_time'], '%Y-%m-%d %H:%M'))
+    except (KeyError, ValueError):
+        end_time = default['end_time']
+        response.message(Severity.INFO, 'using default end_time {}', end_time)
+
+    if start_time > end_time:
+        response.message(Severity.INFO, 'swapping start_time and end_time')
+        start_time, end_time = end_time, start_time
+
+    try:
+        birds = query['birds']
     except KeyError:
-        response.message(Severity.ERROR, 'must specify birds')
-        return response
+        response.message(Severity.ERROR, 'must select one or more birds to plan for')
+        return Parameters(valid=False, response=response)
 
-    missing_birds = birds - set(birdplan.tle.keys())
-    if missing_birds:
-        response.message(Severity.WARNING, 'birds not found: {}', ','.join(missing_birds))
-
-    birds = birds & set(birdplan.tle.keys())
-    if not birds:
-        response.message(Severity.ERROR, 'no available birds specified')
-        return response
-
-    t1 = datetime.now(timezone.utc)
-    response.message('start time', Severity.VERBOSE, (t1, ))
+    return Parameters(
+        True, grid, where, minimum_altitude, tz, start_time, end_time, birds, response
+    )
 
 def web_query_wrapper(query_string, window_start_datetime, window_days=None):
     '''Given a query string, prepare results that can go to JSON or HTML.
@@ -207,7 +153,7 @@ def web_query_wrapper(query_string, window_start_datetime, window_days=None):
         messages.append(Message("Missing key 'grid'", True))
 
     try:
-        latlng = mh.toLoc(grid)
+        where = Topos(*mh.toLoc(grid))
     except Exception as ex:
         messages.append(Message("Exception decoding grid: {}".format(str(ex)), True))
 
@@ -440,7 +386,6 @@ def application(env, start_response):
 try:
     import uwsgi
     # this is meant to be shared across uWSGI application() invocations
-    #tzwhere = tzwhere.tzwhere()
     #global_birdplan = BirdPlan(TleManager())
 except ImportError:
     # will any tests require tzwhere?
