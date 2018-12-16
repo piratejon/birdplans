@@ -133,6 +133,32 @@ def params_from_query(query, default):
         True, grid, where, minimum_altitude, tz, start_time, end_time, birds, response
     )
 
+class BirdplansApi:
+    '''Birdplans API endpoints
+    '''
+
+    def __init__(self):
+        '''Set us up some API.
+        '''
+        print('BirdplansApi init', self)
+
+    def get_uwsgi_application(self):
+        '''Return something uwsgi can call.
+        '''
+        return lambda env, start_response: self.uwsgi_application(env, start_response)
+
+    def uwsgi_application(self, env, start_response):
+        '''uwsgi application method
+        '''
+        encoding = 'utf-8'
+
+        keys = parse.parse_qs(env['QUERY_STRING'])
+        start_response('200 OK', [('Content-Type', 'text/html; charset={}'.format(encoding))])
+
+        print('BirdplansApi application', self)
+
+        yield bytes('''<h1>LOL WUT</h1>''', encoding)
+
 def web_query_wrapper(query_string, window_start_datetime, window_days=None):
     '''Given a query string, prepare results that can go to JSON or HTML.
 
@@ -376,17 +402,9 @@ def simple_page(env, start_response, encoding):
     </html>
     ''', encoding)
 
-def application(env, start_response):
-    '''uWSGI handler.
-    '''
-    encoding = 'utf-8'
-
-    if True: # simple page
-        yield from simple_page(env, start_response, encoding)
 try:
     import uwsgi
-    # this is meant to be shared across uWSGI application() invocations
-    #global_birdplan = BirdPlan(TleManager())
+    endpoint_server = BirdplansApi()
+    application = endpoint_server.get_uwsgi_application()
 except ImportError:
-    # will any tests require tzwhere?
     pass
