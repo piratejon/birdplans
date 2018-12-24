@@ -1,4 +1,4 @@
-#!`/usr/bin/env python3`
+#!/usr/bin/env python3
 
 '''
 uwsgi.py
@@ -133,31 +133,107 @@ def params_from_query(query, default):
         True, grid, where, minimum_altitude, tz, start_time, end_time, birds, response
     )
 
-class BirdplansApi:
-    '''Birdplans API endpoints
+class BirdplansUwsgi:
+    '''Birdplans uwsgi application
     '''
 
     def __init__(self):
-        '''Set us up some API.
+        '''Set application defaults.
         '''
-        print('BirdplansApi init', self)
+        self.encoding = 'utf-8'
 
     def get_uwsgi_application(self):
         '''Return something uwsgi can call.
         '''
-        return lambda env, start_response: self.uwsgi_application(env, start_response)
+
+        return self.uwsgi_application
 
     def uwsgi_application(self, env, start_response):
-        '''uwsgi application method
+        '''Route requests to the appropriate handler_ method.
         '''
-        encoding = 'utf-8'
 
-        keys = parse.parse_qs(env['QUERY_STRING'])
-        start_response('200 OK', [('Content-Type', 'text/html; charset={}'.format(encoding))])
+        route_to = env['PATH_INFO'].split('/')[1]
+        yield from getattr(self, 'handler_' + route_to, self.default_handler(env, start_response))
 
-        print('BirdplansApi application', self)
+    def handler_env(self, env, start_response):
+        '''Diagnostic; return the uwsgi ENV.
+        '''
 
-        yield bytes('''<h1>LOL WUT</h1>''', encoding)
+        start_response('200 OK', [('Content-Type', 'text/plain; charset={}'.format(self.encoding))])
+        yield bytes('\n'.join(['{}: {}'.format(k, v) for k, v in env.items()]), self.encoding)
+
+    def default_handler(self, env, start_response):
+        '''Default handler, returns the main application.
+        '''
+
+        with open('static/birdplans.html', 'r') as fin:
+            start_response('200 OK', [('Content-Type', 'text/html; charset={}'.format(self.encoding))])
+            yield bytes(fin.read(), self.encoding) # TODO less sponge plz
+
+    @staticmethod
+    def decode_grid(grid):
+        '''Decode a Maidenhead grid locator to (latitude, longitude).
+
+        :param grid: Grid to decode
+        :type grid: string
+
+        :return: (latitude, longitude) floating point degrees tuple
+        :rtype: (float, float)
+
+        :raises ValueError: Grid locator contains a character where a digit is expected.
+        :raises AssertionError: Grid locator character length is not 2, 4, 6, or 8
+        '''
+
+        return mh.toLoc(grid)
+
+    def endpoint_passes_by_grid(self, **query):
+        '''Fetch passes at a grid location. Keyword arguments may come from decoded query string.
+
+        :Keyword Arguments
+            * *grid* (``string``)
+                Maidenhead grid locator for Earth surface reference point
+            * *start_time* (``string``)
+                Beginning of time window in which to estimate passes (%Y%m%d%H%M)
+            * *end_time* (``string``)
+                End of time window in which to estimate passes (%Y%m%d%H%M)
+            * *minimum_altitude* (``float``)
+                Minimum peak pass altitude
+            * *tzname* (``string``)
+                name of pytz timezone applying to start_time, end_time, and results
+        '''
+        try:
+            lat, lng = self.decode_grid(query['grid'])
+        except KeyError:
+            pass
+
+        return self.endpoint_passes_by_latlng(
+            *mh.toLoc(query['grid'])
+            , query['start_time']
+            , query['stop_time']
+            , query['minimum_altitude']
+            , query['tzname']
+        )
+
+    def endpoint_passes_by_latlng(self, **query):
+        '''Fetch passes at a latitude/longitude. Keyword arguments may come from decoded query
+        string.
+
+        :Keyword Arguments
+            * *lat* (``float``)
+                latitude of Earth surface reference point
+            * *lng* (``float``)
+                longitude of Earth surface reference point
+            * *start_time* (``string``)
+                Beginning of time window in which to estimate passes (%Y%m%d%H%M)
+            * *end_time* (``string``)
+                End of time window in which to estimate passes (%Y%m%d%H%M)
+            * *minimum_altitude* (``float``)
+                Minimum peak pass altitude
+            * *tzname* (``string``)
+                name of pytz timezone applying to start_time, end_time, and results
+        '''
+
+        return 0
 
 def web_query_wrapper(query_string, window_start_datetime, window_days=None):
     '''Given a query string, prepare results that can go to JSON or HTML.
@@ -404,7 +480,8 @@ def simple_page(env, start_response, encoding):
 
 try:
     import uwsgi
-    endpoint_server = BirdplansApi()
+    endpoint_server = BirdplansUwsgi()
     application = endpoint_server.get_uwsgi_application()
 except ImportError:
+    # must be testing or something
     pass
