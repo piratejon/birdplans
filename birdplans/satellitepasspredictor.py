@@ -12,7 +12,6 @@ import math
 
 from collections import namedtuple
 
-import maidenhead as mh
 import numpy as np
 
 from skyfield.api import Topos
@@ -86,7 +85,7 @@ def estimate_window_passes(timescale, satellite, location, window_start, window_
 def pass_estimation_wrapper(
         birdplan
         , satellite_name
-        , grid
+        , latlng
         , window_start
         , window_days
         , minimum_altitude=None):
@@ -94,7 +93,7 @@ def pass_estimation_wrapper(
 
     :param birdplan: an BirdPlan object encapsulating global state
     :param satellite_name: the name of a satellite in the TLE file
-    :param grid: Earth reference location (Maidenhead grid)
+    :param latlng: Earth reference point expressed as a tuple of floats
     :param window_start: starting time window to search for passes (Y, m, d) tuple
     :param window_days: how many days to search for -- less accuracy beyond a week
     :param minimum_altitude: minimum peak altitude pass filter, default 0
@@ -111,7 +110,7 @@ def pass_estimation_wrapper(
     all_passes = estimate_window_passes(
         birdplan.timescale
         , birdplan.tle[satellite_name]
-        , Topos(*mh.toLoc(grid))
+        , Topos(*latlng)
         , time_range[0]
         , time_range[-1]
     )

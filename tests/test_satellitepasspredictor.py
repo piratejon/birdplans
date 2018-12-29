@@ -21,7 +21,7 @@ class TestSatellitePassPredictor(unittest.TestCase):
     def test_estimate_window_passes(self):
         '''make sure we can guess where it's gonna be'''
         birdplan = BirdPlan(TestTleManager())
-        result = pass_estimation_wrapper(birdplan, 'AO-91', 'EM15', (2018, 11, 24), 5, 30.0)
+        result = pass_estimation_wrapper(birdplan, 'AO-91', (35.0, -98.0), (2018, 11, 24), 5, 30.0)
         self.assertEqual(len(result.passes), 8)
         self.assertEqual(result.passes[0][0].utc_iso(), '2018-11-24T07:53:12Z')
         self.assertEqual(result.passes[7][1].utc_iso(), '2018-11-28T18:43:25Z')
