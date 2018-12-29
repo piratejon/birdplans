@@ -31,5 +31,5 @@ div > label {
 }
 
 div > label.bird_checked {
-  background-color: green;
+  background-color: #55ff55;
 }
