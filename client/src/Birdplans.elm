@@ -66,6 +66,11 @@ toString locator =
     GridSE -> "GridSE"
     LatLng -> "LatLng"
 
+type alias Bird =
+  { name : String
+  , selected : Bool
+  }
+
 type alias State =
   { locator_selector : LocatorSelectorType
   , lat : Float
@@ -79,8 +84,7 @@ type alias State =
   , min_alt : Int
   , min_alt_txt : String
   , min_alt_valid : Bool
-  , selected_birds : (List String)
-  , available_birds : (List String)
+  , birds : (List Bird)
   , query_string : String
   }
 
@@ -111,8 +115,7 @@ initialState =
     , min_alt_valid = True
     , min_alt = min_alt
     , min_alt_txt = String.fromInt min_alt
-    , selected_birds = []
-    , available_birds = []
+    , birds = []
     , query_string = "query_string"
     }
 
@@ -136,14 +139,29 @@ view state =
         , section [ Attr.id "altitude" ]
           [ viewInput "Minimum Degrees Altitude" "text" initialState.min_alt_txt state.min_alt_txt (if state.min_alt_valid then "valid" else "invalid") UpdateAlt
           ]
-        , section [ Attr.id "birds" ] [ viewSelect "Birds" state.available_birds True 8 UpdateBirds ]
+        , section [ Attr.id "birds" ] [ viewChecks "Birds" state UpdateBirds ]
         , input [ Attr.type_ "button", Attr.value "Search", onClick Search ] []
         , text state.query_string
       ]
     , Html.node "link" [ Attr.rel "stylesheet", Attr.href "birdplans.css" ] []
   ]
 
-viewSelect : String -> (List String) -> Bool -> Int -> (String -> Msg) -> Html Msg
+viewChecks : String -> State -> (String -> Msg) -> Html Msg
+viewChecks label_ state toMsg =
+  div []
+    ([div [] [text label_]]
+    ++ List.map (\i ->
+        label [ Attr.class (if i.selected then "bird_checked" else "bird_unchecked") ]
+          [ text i.name
+          , input
+            [ Attr.type_ "checkbox"
+            , Attr.value i.name
+            , Attr.checked i.selected
+            , onInput toMsg
+            ] []
+          ]
+      ) state.birds)
+
 viewSelect label_ items multiple size toMsg =
   label []
     [ (span [] [text label_])
@@ -355,9 +373,11 @@ update msg state =
     ReceiveBirds result ->
       case result of
         Err _ -> (state, Cmd.none)
-        Ok birds -> ({state | available_birds = List.sort (List.map first birds)}, Cmd.none)
+        Ok birds -> ({state | birds = List.map (\b -> {name=b, selected=False}) (List.sort (List.map first birds))}, Cmd.none)
 
-    UpdateBirds _ -> (state, Cmd.none)
+    UpdateBirds bird ->
+      let _ = Debug.log "updatebirds" bird in
+      ({state | birds = (List.map (\b -> if b.name == bird then {b | selected = (not b.selected)} else b) state.birds)}, Cmd.none)
 
     UpdateQueryString ->
       ({state | query_string = buildQueryString state}, Cmd.none)
@@ -370,7 +390,7 @@ getAvailableBirds file =
   }
 
 targetSelectedValue : JsonD.Decoder String
-targetSelectedValue = (JsonD.field "target" String)
+targetSelectedValue = (JsonD.field "target" JsonD.string)
 
 buildQueryString : State -> String
 buildQueryString state =
@@ -379,5 +399,5 @@ buildQueryString state =
   [ UrlB.string "lat" state.lattxt
   , UrlB.string "lng" state.lngtxt
   , UrlB.int "alt" state.min_alt
-  ] ++ (List.map (\b -> (UrlB.string "bird" b)) state.selected_birds)
+  ] ++ (List.map (\b -> (UrlB.string "bird" b.name)) (List.filter (\b -> b.selected) state.birds))
   )
