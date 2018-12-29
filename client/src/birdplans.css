@@ -1,0 +1,23 @@
+.invalid {
+  border: 2px solid red;
+  border-radius: 4px;
+}
+
+section { margin-bottom: 1em; }
+
+section > label {
+  display: inline-block;
+}
+
+section > label > * {
+  display: block;
+  margin-right: 0.8em;
+}
+
+#birds > label > * {
+  display: block;
+}
+
+input[type="text"] {
+  width: 6em;
+}

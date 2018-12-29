@@ -1,0 +1,90 @@
+{
+  "sources": {
+    "celestrak/active.txt": {
+      "url": "https://www.celestrak.com/NORAD/elements/active.txt"
+    },
+    "nasa/nasa.all": {
+      "url": "http://www.amsat.org/amsat/ftp/keps/current/nasa.all"
+    }
+  },
+  "birds": {
+    "AO-7": {
+      "source": "celestrak/active.txt",
+      "name": "OSCAR 7 (AO-7)"
+    },
+    "AO-73": {
+      "source": "celestrak/active.txt",
+      "name": "FUNCUBE-1 (AO-73)"
+    },
+    "CAS-4B": {
+      "source": "celestrak/active.txt",
+      "name": "ZHUHAI-1 02 (CAS 4B)"
+    },
+    "EO-88": {
+      "source": "celestrak/active.txt",
+      "name": "NAYIF-1 (EO-88)"
+    },
+    "UKUBE-1": {
+      "source": "celestrak/active.txt",
+      "name": "UKUBE-1"
+    },
+    "XW-2A": {
+      "source": "celestrak/active.txt",
+      "name": "XW-2A"
+    },
+    "XW-2B": {
+      "source": "celestrak/active.txt",
+      "name": "XW-2B"
+    },
+    "XW-2C": {
+      "source": "celestrak/active.txt",
+      "name": "XW-2C"
+    },
+    "XW-2D": {
+      "source": "celestrak/active.txt",
+      "name": "XW-2D"
+    },
+    "XW-2F": {
+      "source": "celestrak/active.txt",
+      "name": "XW-2F"
+    },
+    "FO-29": {
+      "source": "celestrak/active.txt",
+      "name": "JAS-2 (FO-29)"
+    },
+    "Fox-1E": {
+      "name": "Fox-1E"
+    },
+    "SO-50": {
+      "source": "celestrak/active.txt",
+      "name": "SAUDISAT 1C (SO-50)"
+    },
+    "LilacSat2": {
+      "source": "celestrak/active.txt",
+      "name": "LILACSAT 2"
+    },
+    "AO-85": {
+      "source": "nasa/nasa.all",
+      "name": "AO-85"
+    },
+    "AO-91": {
+      "source": "celestrak/active.txt",
+      "name": "RADFXSAT (FOX-1B)"
+    },
+    "AO-92": {
+      "source": "celestrak/active.txt",
+      "name": "FOX-1D (AO-92)"
+    },
+    "FalconSat-3": {
+      "name": "FALCONSAT-3",
+      "source": "celestrak/active.txt"
+    },
+    "AO-95": {
+      "name": "AO-95",
+      "source": "nasa/nasa.all"
+    },
+    "ESEO": {
+      "name": "ESEO"
+    }
+  }
+}
