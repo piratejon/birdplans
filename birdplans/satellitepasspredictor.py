@@ -8,6 +8,7 @@ jonathanwesleystone+KI5BEX@gmail.com
 predict upcoming satellite passes at a given location
 '''
 
+import datetime
 import math
 
 from collections import namedtuple
@@ -94,8 +95,8 @@ def pass_estimation_wrapper(
 
     :param satellite: SkyField satellite object to compute passes for
     :param latlng: Earth reference point expressed as a tuple of floats
-    :param window_start: starting time window to search for passes (Y, m, d) tuple
-    :param window_days: how many days to search for -- less accuracy beyond a week
+    :param window_start: pass estimation window start time as tz-aware Python datetime
+    :param window_days: how many days to estimate passes for
     :param minimum_altitude: minimum peak altitude pass filter, default 0
     '''
 
@@ -104,14 +105,14 @@ def pass_estimation_wrapper(
 
     minimum_altitude = 0 if minimum_altitude is None else minimum_altitude
 
-    window_minutes = 24.0 * 60.0 * window_days
-    time_range = TIMESCALE.utc(*window_start, 0, range(int(window_minutes)))
+    time_start = TIMESCALE.utc(window_start)
+    time_end = TIMESCALE.utc(window_start + datetime.timedelta(days=window_days))
 
     all_passes = estimate_window_passes(
         satellite
         , Topos(*latlng)
-        , time_range[0]
-        , time_range[-1]
+        , time_start
+        , time_end
     )
 
     return WindowPasses(
