@@ -131,6 +131,11 @@ class TleManager:
             with open(self.tledbhistory, 'w') as fout:
                 json.dump(tledbhistory, fout)
 
+    def __getitem__(self, bird):
+        '''Bird fetcher -- return SkyField Satellite object parsed from the TLE identified by bird.
+        '''
+        return self.bird[bird]
+
 class TestTleManager(TleManager):
     '''Test wrapper for TleManager.
     '''
