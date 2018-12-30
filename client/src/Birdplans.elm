@@ -37,6 +37,7 @@ type Msg
   | UpdateLng String
   | UpdateAlt String
   | ReceiveBirds (Result Http.Error (List (String, JsonD.Value)))
+  | ReceivePasses (Result Http.Error (List Pass))
   | UpdateBirds String
   | UpdateQueryString
 
@@ -86,6 +87,27 @@ type alias State =
   , min_alt_valid : Bool
   , birds : (List Bird)
   , query_string : String
+  }
+
+type alias PassAzimuth =
+  { aos : Float
+  , tca : Float
+  , los : Float
+  }
+
+type alias PassTime =
+  { aos : Int
+  , tca : Int
+  , los : Int
+  }
+
+type alias Pass =
+  { grid: String
+  , lat : Float
+  , lng : Float
+  , bird : String
+  , azimuth : PassAzimuth
+  , time : PassTime
   }
 
 subscriptions : State -> Sub Msg
@@ -161,16 +183,6 @@ viewChecks label_ state toMsg =
             ] []
           ]
       ) state.birds)
-
-viewSelect label_ items multiple size toMsg =
-  label []
-    [ (span [] [text label_])
-    , select
-      [ Attr.size size, Attr.multiple multiple, on "change" (JsonD.map toMsg targetSelectedValue)]
-      (List.map (\i ->
-        option [ Attr.value i ] [ text i ]
-      ) items)
-    ]
 
 viewInput : String -> String -> String -> String -> String -> (String -> Msg) -> Html Msg
 viewInput label_ type_ placeholder_ value_ class toMsg =
@@ -382,12 +394,49 @@ update msg state =
     UpdateQueryString ->
       ({state | query_string = buildQueryString state}, Cmd.none)
 
+    ReceivePasses result ->
+      case result of
+        Err _ -> (state, Cmd.none)
+        Ok passes -> let _ = Debug.log "receivepasses" passes in (state, Cmd.none)
+
 getAvailableBirds : String -> Cmd Msg
 getAvailableBirds file =
   Http.get
     { url = (UrlB.relative [ file ] [])
     , expect = Http.expectJson ReceiveBirds (JsonD.field "birds" (JsonD.keyValuePairs JsonD.value))
-  }
+    }
+
+queryPasses : State -> Cmd Msg
+queryPasses state =
+  Http.get
+    { url = state.query_string
+    , expect = Http.expectJson ReceivePasses passesDecoder
+    }
+
+azimuthDecoder : JsonD.Decoder PassAzimuth
+azimuthDecoder =
+  JsonD.map3 PassAzimuth
+    (JsonD.at ["aos"] JsonD.float)
+    (JsonD.at ["tca"] JsonD.float)
+    (JsonD.at ["los"] JsonD.float)
+
+timeDecoder : JsonD.Decoder PassTime
+timeDecoder =
+  JsonD.map3 PassTime
+    (JsonD.at ["aos"] JsonD.int)
+    (JsonD.at ["tca"] JsonD.int)
+    (JsonD.at ["los"] JsonD.int)
+
+passesDecoder : JsonD.Decoder (List Pass)
+passesDecoder =
+  JsonD.list (JsonD.map6 Pass
+    (JsonD.at ["grid"] JsonD.string)
+    (JsonD.at ["lat"] JsonD.float)
+    (JsonD.at ["lng"] JsonD.float)
+    (JsonD.at ["bird"] JsonD.string)
+    (JsonD.at ["azimuth"] azimuthDecoder)
+    (JsonD.at ["time"] timeDecoder)
+    )
 
 targetSelectedValue : JsonD.Decoder String
 targetSelectedValue = (JsonD.field "target" JsonD.string)
