@@ -14,13 +14,15 @@ from collections import namedtuple
 
 import numpy as np
 
-from skyfield.api import Topos
+from skyfield.api import Topos, Loader
 from scipy import optimize
 
 Pass = namedtuple('Pass', ['AOS', 'TCA', 'LOS'])
 WindowPasses = namedtuple('WindowPasses', ['diff', 'passes'])
 
-def estimate_window_passes(timescale, satellite, location, window_start, window_end):
+TIMESCALE = Loader('data/skyfield').timescale()
+
+def estimate_window_passes(satellite, location, window_start, window_end):
     '''
     Implement the satellite pass prediction approach from
     <https://github.com/skyfielders/astronomy-notebooks/blob/master/Solvers/Earth-Satellite-Passes.ipynb>
@@ -43,7 +45,7 @@ def estimate_window_passes(timescale, satellite, location, window_start, window_
     sample_points = int(math.ceil(window_revolutions * 6.0))
     sample_step = window_duration / sample_points
 
-    sample_time_range = timescale.tai_jd([
+    sample_time_range = TIMESCALE.tai_jd([
         window_start.tai + (_ * sample_step)
         for _ in range(sample_points)
     ])
@@ -56,14 +58,14 @@ def estimate_window_passes(timescale, satellite, location, window_start, window_
     right_diff = np.ediff1d(sample_altitudes, to_end=0.0)
     maxima = (left_diff > 0.0) & (right_diff < 0.0)
 
-    minus_alt_f_wrapper = lambda t: -alt_f(timescale.tai_jd(t))
+    minus_alt_f_wrapper = lambda t: -alt_f(TIMESCALE.tai_jd(t))
     find_peaks = lambda t: optimize.minimize_scalar(
         minus_alt_f_wrapper
         , bracket=[t.tai + sample_step, t.tai - sample_step]
         , tol=(1.0 / 24.0 / 60.0 / 60.0) / t.tai
     ).x
 
-    t_peaks = timescale.tai_jd([
+    t_peaks = TIMESCALE.tai_jd([
         find_peaks(ti) for ti in sample_time_range[maxima]
     ])
 
@@ -76,23 +78,21 @@ def estimate_window_passes(timescale, satellite, location, window_start, window_
     )
 
     pass_times = [
-        Pass(*timescale.tai_jd([find_rising(_), _.tai, find_setting(_)]))
+        Pass(*TIMESCALE.tai_jd([find_rising(_), _.tai, find_setting(_)]))
         for _ in t_peaks if alt_f(_) > 0
     ]
 
     return WindowPasses(diff, pass_times)
 
 def pass_estimation_wrapper(
-        birdplan
-        , satellite_name
+        satellite
         , latlng
         , window_start
         , window_days
         , minimum_altitude=None):
     '''Call estimate_window_passes with skyfield API objects.
 
-    :param birdplan: an BirdPlan object encapsulating global state
-    :param satellite_name: the name of a satellite in the TLE file
+    :param satellite: SkyField satellite object to compute passes for
     :param latlng: Earth reference point expressed as a tuple of floats
     :param window_start: starting time window to search for passes (Y, m, d) tuple
     :param window_days: how many days to search for -- less accuracy beyond a week
@@ -105,11 +105,10 @@ def pass_estimation_wrapper(
     minimum_altitude = 0 if minimum_altitude is None else minimum_altitude
 
     window_minutes = 24.0 * 60.0 * window_days
-    time_range = birdplan.timescale.utc(*window_start, 0, range(int(window_minutes)))
+    time_range = TIMESCALE.utc(*window_start, 0, range(int(window_minutes)))
 
     all_passes = estimate_window_passes(
-        birdplan.timescale
-        , birdplan.tle[satellite_name]
+        satellite
         , Topos(*latlng)
         , time_range[0]
         , time_range[-1]
