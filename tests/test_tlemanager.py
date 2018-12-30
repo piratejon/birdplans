@@ -35,7 +35,26 @@ class TestTleManager(unittest.TestCase):
             , 'AO-85'
             , 'AO-91'
             , 'AO-92'
-            }.issubset(tleman.bird_tles))
+            }.issubset(tleman.tle))
+
+        self.assertTrue({
+            'AO-7'
+            , 'AO-73'
+            , 'CAS-4B'
+            , 'EO-88'
+            , 'UKUBE-1'
+            , 'XW-2A'
+            , 'XW-2B'
+            , 'XW-2C'
+            , 'XW-2D'
+            , 'XW-2F'
+            , 'FO-29'
+            , 'SO-50'
+            , 'LilacSat2'
+            , 'AO-85'
+            , 'AO-91'
+            , 'AO-92'
+            }.issubset(tleman.bird))
 
 if __name__ == '__main__':
     unittest.main()

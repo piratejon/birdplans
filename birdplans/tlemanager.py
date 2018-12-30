@@ -14,6 +14,9 @@ from datetime import datetime, timezone
 
 import requests
 
+from skyfield.functions import BytesIO
+from skyfield.iokit import parse_tle
+
 class TleManager:
     '''Keep the TLE files updated.
     '''
@@ -32,9 +35,21 @@ class TleManager:
         with open(self.tlesrcfile, 'r') as fin:
             self.tlesrcs = json.load(fin)
 
-        self.bird_tles = self.load()
+        self.tle = self.load()
         # this has the tle with our aliases
-        self.tlestring = '\n'.join([key + '\n' + value for key, value in self.bird_tles.items()])
+        self.tlestring = '\n'.join([key + '\n' + value for key, value in self.tle.items()])
+        self.bird = self.parse()
+
+    def parse(self):
+        '''Parse the loaded tle data using SkyField API.
+        '''
+        tle = {}
+        for names, sat in parse_tle(BytesIO(bytes(self.tlestring, 'ascii'))):
+            tle[sat.model.satnum] = sat
+            for name in names:
+                tle[name] = sat
+
+        return tle
 
     def load(self):
         '''load the current tle data into a dict of {bird_alias: 'tle\nlines'}
