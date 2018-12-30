@@ -20,6 +20,7 @@ import pytz
 
 import maidenhead as mh
 
+from birdplans.satellitepasspredictor import pass_estimation_wrapper
 from birdplans.tlemanager import TleManager
 
 class Severity(Enum):
@@ -141,6 +142,7 @@ class BirdplansUwsgi:
         '''Set application defaults.
         '''
         self.encoding = 'utf-8'
+        self.tle = TleManager()
 
     def get_uwsgi_application(self):
         '''Return something uwsgi can call.
@@ -153,7 +155,7 @@ class BirdplansUwsgi:
         '''
 
         route_to = env['PATH_INFO'].split('/')[1]
-        yield from getattr(self, 'handler_' + route_to, self.default_handler(env, start_response))
+        yield from getattr(self, 'handler_' + route_to, self.default_handler)(env, start_response)
 
     def handler_env(self, env, start_response):
         '''Diagnostic; return the uwsgi ENV.
@@ -161,6 +163,25 @@ class BirdplansUwsgi:
 
         start_response('200 OK', [('Content-Type', 'text/plain; charset={}'.format(self.encoding))])
         yield bytes('\n'.join(['{}: {}'.format(k, v) for k, v in env.items()]), self.encoding)
+
+    def handler_one(self, env, start_response):
+        '''Passes over a single location.
+        '''
+
+        start_response('200 OK', [('Content-Type', 'text/json; charset={}'.format(self.encoding))])
+        keys = parse.parse_qs(env['QUERY_STRING'])
+        # yield bytes('\n'.join(['{}: {}'.format(k, v) for k, v in env.items()]), self.encoding)
+        yield bytes('\n'.join(['{}: {}'.format(k, str(v)) for k, v in keys.items()]), self.encoding)
+
+        for bird in keys['bird']:
+            for pass_ in pass_estimation_wrapper(
+                self.tle[bird]
+                , (float(keys['lat'][0]), float(keys['lng'][0]))
+                , (2018, 12, 30)
+                , 5
+                , int(keys.get('min_alt', [12])[0])
+                ):
+                yield bytes(str(pass_), self.encoding)
 
     def default_handler(self, env, start_response):
         '''Default handler, returns the main application.
