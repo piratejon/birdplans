@@ -8,10 +8,11 @@ jonathanwesleystone+KI5BEX@gmail.com
 uwsgi application wrapper/api endpoint
 '''
 
+import json
 import html
 import sys
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta
 from collections import namedtuple
 from urllib import parse
 from enum import Enum
@@ -164,6 +165,18 @@ class BirdplansUwsgi:
         start_response('200 OK', [('Content-Type', 'text/plain; charset={}'.format(self.encoding))])
         yield bytes('\n'.join(['{}: {}'.format(k, v) for k, v in env.items()]), self.encoding)
 
+    def handler_birds(self, env, start_response):
+        '''Return available birds.
+        '''
+        start_response('200 OK', [('Content-Type', 'text/json; charset={}'.format(self.encoding))])
+        yield bytes(json.dumps(list(self.tle.tle.keys())), self.encoding)
+
+    def handler_tz(self, env, start_response):
+        '''Return supported timezones
+        '''
+        start_response('200 OK', [('Content-Type', 'text/json; charset={}'.format(self.encoding))])
+        yield bytes(json.dumps(pytz.all_timezones), self.encoding)
+
     def handler_one(self, env, start_response):
         '''Passes over a single location.
         '''
@@ -177,11 +190,11 @@ class BirdplansUwsgi:
             for pass_ in pass_estimation_wrapper(
                 self.tle[bird]
                 , (float(keys['lat'][0]), float(keys['lng'][0]))
-                , (2018, 12, 30)
+                , datetime(2018, 12, 30, tzinfo=pytz.utc)
                 , 5
                 , int(keys.get('min_alt', [12])[0])
                 ):
-                yield bytes(str(pass_), self.encoding)
+                yield bytes(json.dumps(pass_), self.encoding)
 
     def default_handler(self, env, start_response):
         '''Default handler, returns the main application.
