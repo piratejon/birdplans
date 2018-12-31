@@ -560,7 +560,7 @@ buildQueryString state =
   [ UrlB.string "lat" state.lattxt
   , UrlB.string "lng" state.lngtxt
   , UrlB.int "alt" state.min_alt
-  , UrlB.string "tzname" state.timezonename
+  , UrlB.string "tz" state.timezonename
   , UrlB.string "window_start" state.datetime
   ] ++ (List.map (\b -> (UrlB.string "bird" b.name)) (List.filter (\b -> b.selected) state.birds))
   )
