@@ -12,6 +12,9 @@ import Browser
 import List
 import Http
 
+import Task -- set current time <https://stackoverflow.com/a/52156804/5403184> 2018-12-30
+import Time
+
 import Tuple exposing (first, second)
 import String exposing (length, toUpper, slice)
 
@@ -36,10 +39,13 @@ type Msg
   | UpdateLat String
   | UpdateLng String
   | UpdateAlt String
+  | UpdateDateTime String
   | ReceiveBirds (Result Http.Error (List (String, JsonD.Value)))
   | ReceivePasses (Result Http.Error (List Pass))
   | UpdateBirds String
   | UpdateQueryString
+  | SetTimeZone Time.Zone
+  | SetTimeNow Time.Posix
 
 main =
   Browser.element
@@ -79,14 +85,17 @@ type alias State =
   , lattxt : String
   , lngtxt : String
   , grid : String
-  , gridvalid : Bool
-  , latvalid : Bool
-  , lngvalid : Bool
+  , grid_valid : Bool
+  , lat_valid : Bool
+  , lng_valid : Bool
   , min_alt : Int
   , min_alt_txt : String
   , min_alt_valid : Bool
   , birds : (List Bird)
   , query_string : String
+  , datetime : String
+  , datetime_valid : Bool
+  , timezone : Time.Zone
   }
 
 type alias PassAzimuth =
@@ -115,8 +124,15 @@ subscriptions state =
   Sub.none
 
 init : () -> (State, Cmd Msg)
-init _ = (initialState, getAvailableBirds birdsUrl)
+init _ = (
+  initialState
+  , Cmd.batch
+    [ getAvailableBirds birdsUrl
+    , Task.perform SetTimeZone Time.here
+    ]
+  )
 
+initialState : State
 initialState =
   let
       grid = "EM15gj"
@@ -125,21 +141,24 @@ initialState =
       lng = second latlng
       min_alt = 12
   in 
-    { locator_selector = GridSW
-    , lat = lat
-    , lng = lng
-    , lattxt = String.fromFloat lat
-    , lngtxt = String.fromFloat lng
-    , grid = grid
-    , gridvalid = True
-    , latvalid = True
-    , lngvalid = True
-    , min_alt_valid = True
-    , min_alt = min_alt
-    , min_alt_txt = String.fromInt min_alt
-    , birds = []
-    , query_string = "query_string"
-    }
+      { locator_selector = GridSW
+      , lat = lat
+      , lng = lng
+      , lattxt = String.fromFloat lat
+      , lngtxt = String.fromFloat lng
+      , grid = grid
+      , grid_valid = True
+      , lat_valid = True
+      , lng_valid = True
+      , min_alt_valid = True
+      , min_alt = min_alt
+      , min_alt_txt = String.fromInt min_alt
+      , birds = []
+      , query_string = "query_string"
+      , datetime = ""
+      , datetime_valid = True
+      , timezone = Time.utc
+      }
 
 view : State -> Html Msg
 view state =
@@ -147,7 +166,7 @@ view state =
     h1 [] [text "birdplans"]
     , div []
       [ section [ Attr.id "locators" ]
-        [ viewInput "Grid" "text" initialState.grid state.grid (if state.gridvalid then "valid" else "invalid") UpdateGrid
+        [ viewInput "Grid" "text" initialState.grid state.grid (if state.grid_valid then "valid" else "invalid") UpdateGrid
         {-
         , radioInput "Center" "gridref" "GridCenter" state.locator_selector UpdateGridRef
         , radioInput "NW" "gridref" "GridNW" state.locator_selector UpdateGridRef
@@ -155,9 +174,12 @@ view state =
         , radioInput "SW" "gridref" "GridSW" state.locator_selector UpdateGridRef
         , radioInput "SE" "gridref" "GridSE" state.locator_selector UpdateGridRef
         -}
-        , viewInput "Latitude" "text" initialState.lattxt state.lattxt (if state.latvalid then "valid" else "invalid") UpdateLat
-        , viewInput "Longitude" "text"  initialState.lngtxt state.lngtxt (if state.lngvalid then "valid" else "invalid") UpdateLng
+        , viewInput "Latitude" "text" initialState.lattxt state.lattxt (if state.lat_valid then "valid" else "invalid") UpdateLat
+        , viewInput "Longitude" "text"  initialState.lngtxt state.lngtxt (if state.lng_valid then "valid" else "invalid") UpdateLng
         ]
+        , section [ Attr.class "datetime" ]
+          [ viewInput "Start of 7-day window to search" "datetime-local" initialState.datetime state.datetime (if state.datetime_valid then "valid" else "invalid") UpdateDateTime
+          ]
         , section [ Attr.id "altitude" ]
           [ viewInput "Minimum Degrees Altitude" "text" initialState.min_alt_txt state.min_alt_txt (if state.min_alt_valid then "valid" else "invalid") UpdateAlt
           ]
@@ -328,14 +350,14 @@ update msg state =
           then
             ({state
               | lattxt = newlat
-              , latvalid = True
+              , lat_valid = True
               , lat = lat
-              , grid = (if state.lngvalid then (latLngToGrid lat state.lng) else state.grid)
-              , gridvalid = state.lngvalid
+              , grid = (if state.lng_valid then (latLngToGrid lat state.lng) else state.grid)
+              , grid_valid = state.lng_valid
             }, Cmd.none)
           else
-            ({state | lattxt = newlat, latvalid = False}, Cmd.none)
-        Nothing -> ({state | lattxt = newlat, latvalid = False}, Cmd.none)
+            ({state | lattxt = newlat, lat_valid = False}, Cmd.none)
+        Nothing -> ({state | lattxt = newlat, lat_valid = False}, Cmd.none)
 
     UpdateLng newlng ->
       case (String.toFloat newlng) of
@@ -344,14 +366,14 @@ update msg state =
           then
             ({state
               | lngtxt = newlng
-              , lngvalid = True
+              , lng_valid = True
               , lng = lng
-              , grid = (if state.latvalid then (latLngToGrid state.lat lng) else state.grid)
-              , gridvalid = state.latvalid
+              , grid = (if state.lat_valid then (latLngToGrid state.lat lng) else state.grid)
+              , grid_valid = state.lat_valid
             }, Cmd.none)
           else
-            ({state | lngtxt = newlng, lngvalid = False}, Cmd.none)
-        Nothing -> ({state | lngtxt = newlng, lngvalid = False}, Cmd.none)
+            ({state | lngtxt = newlng, lng_valid = False}, Cmd.none)
+        Nothing -> ({state | lngtxt = newlng, lng_valid = False}, Cmd.none)
 
     UpdateGrid grid ->
         case (gridToLatLng grid) of
@@ -362,15 +384,15 @@ update msg state =
             in
                 ({state
                   | grid = grid
-                  , gridvalid = True
+                  , grid_valid = True
                   , lat = lat
                   , lng = lng
                   , lattxt = String.fromFloat lat
                   , lngtxt = String.fromFloat lng
-                  , latvalid = True
-                  , lngvalid = True
+                  , lat_valid = True
+                  , lng_valid = True
                 }, Cmd.none)
-          Nothing -> ({state | grid = grid, gridvalid = False}, Cmd.none)
+          Nothing -> ({state | grid = grid, grid_valid = False}, Cmd.none)
 
     UpdateAlt alt_txt ->
       case (String.toInt alt_txt) of
@@ -398,6 +420,42 @@ update msg state =
       case result of
         Err _ -> (state, Cmd.none)
         Ok passes -> let _ = Debug.log "receivepasses" passes in (state, Cmd.none)
+
+    SetTimeZone zone ->
+      ({ state | timezone = zone}, Task.perform SetTimeNow Time.now)
+
+    SetTimeNow now ->
+      ({ state | datetime = (dateTimeFormatted state.timezone now), datetime_valid = True}, Cmd.none)
+
+    UpdateDateTime new_datetime ->
+      ({state | datetime = new_datetime, datetime_valid = validateDateTime new_datetime}, Cmd.none)
+
+dateTimeFormatted : Time.Zone -> Time.Posix -> String
+dateTimeFormatted tz t =
+  String.fromInt (Time.toYear tz t)
+  ++ "-" ++ (
+    case (Time.toMonth tz t) of
+      Time.Jan -> "01"
+      Time.Feb -> "02"
+      Time.Mar -> "03"
+      Time.Apr -> "04"
+      Time.May -> "05"
+      Time.Jun -> "06"
+      Time.Jul -> "07"
+      Time.Aug -> "08"
+      Time.Sep -> "09"
+      Time.Oct -> "10"
+      Time.Nov -> "11"
+      Time.Dec -> "12"
+      )
+  ++ "-" ++ String.fromInt (Time.toDay tz t)
+  ++ " "
+  ++ (if (Time.toHour tz t) < 10 then "0" else "") ++ String.fromInt (Time.toHour tz t)
+  ++ ":"
+  ++ (if (Time.toMinute tz t) < 10 then "0" else "") ++ String.fromInt (Time.toMinute tz t)
+
+validateDateTime : String -> Bool
+validateDateTime s = False
 
 getAvailableBirds : String -> Cmd Msg
 getAvailableBirds file =
