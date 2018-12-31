@@ -20,7 +20,6 @@ import String exposing (length, toUpper, slice)
 
 import Html.Attributes as Attr
 import Html.Events exposing (..)
--- import Html.Events.Extra exposing (targetSelectedIndex)
 import Html exposing (..)
 
 import Json.Decode as JsonD
@@ -30,7 +29,8 @@ import Url
 
 import Char exposing (toCode, fromCode)
 
-birdsUrl = "choice_birds.json"
+birdsUrl = "/birds.json"
+zonesUrl = "/tz.json"
 
 type Msg
   = Search
@@ -39,12 +39,14 @@ type Msg
   | UpdateLat String
   | UpdateLng String
   | UpdateAlt String
+  | UpdateTimeZone String
   | UpdateDateTime String
-  | ReceiveBirds (Result Http.Error (List (String, JsonD.Value)))
+  | ReceiveBirds (Result Http.Error (List String))
+  | ReceiveTimeZones (Result Http.Error (List String))
   | ReceivePasses (Result Http.Error (List Pass))
   | UpdateBirds String
-  | UpdateQueryString
   | SetTimeZone Time.Zone
+  | SetTimeZoneName Time.ZoneName
   | SetTimeNow Time.Posix
 
 main =
@@ -91,11 +93,13 @@ type alias State =
   , min_alt : Int
   , min_alt_txt : String
   , min_alt_valid : Bool
-  , birds : (List Bird)
+  , birds : List Bird
   , query_string : String
   , datetime : String
   , datetime_valid : Bool
   , timezone : Time.Zone
+  , timezonename : String
+  , timezones : List String
   }
 
 type alias PassAzimuth =
@@ -128,6 +132,7 @@ init _ = (
   initialState
   , Cmd.batch
     [ getAvailableBirds birdsUrl
+    , getAvailableTimeZones zonesUrl
     , Task.perform SetTimeZone Time.here
     ]
   )
@@ -158,6 +163,8 @@ initialState =
       , datetime = ""
       , datetime_valid = True
       , timezone = Time.utc
+      , timezonename = "UTC"
+      , timezones = []
       }
 
 view : State -> Html Msg
@@ -176,35 +183,52 @@ view state =
         -}
         , viewInput "Latitude" "text" initialState.lattxt state.lattxt (if state.lat_valid then "valid" else "invalid") UpdateLat
         , viewInput "Longitude" "text"  initialState.lngtxt state.lngtxt (if state.lng_valid then "valid" else "invalid") UpdateLng
+        , viewInput "Start of 7-day window to search" "datetime-local" initialState.datetime state.datetime (if state.datetime_valid then "valid" else "invalid") UpdateDateTime
+        , viewSelect "Time Zone" state.timezonename state.timezones UpdateTimeZone
+        , viewInput "Minimum Degrees Altitude" "text" initialState.min_alt_txt state.min_alt_txt (if state.min_alt_valid then "valid" else "invalid") UpdateAlt
+        , viewChecks "Birds" state.birds UpdateBirds
         ]
-        , section [ Attr.class "datetime" ]
-          [ viewInput "Start of 7-day window to search" "datetime-local" initialState.datetime state.datetime (if state.datetime_valid then "valid" else "invalid") UpdateDateTime
-          ]
-        , section [ Attr.id "altitude" ]
-          [ viewInput "Minimum Degrees Altitude" "text" initialState.min_alt_txt state.min_alt_txt (if state.min_alt_valid then "valid" else "invalid") UpdateAlt
-          ]
-        , section [ Attr.id "birds" ] [ viewChecks "Birds" state UpdateBirds ]
         , input [ Attr.type_ "button", Attr.value "Search", onClick Search ] []
         , text state.query_string
       ]
     , Html.node "link" [ Attr.rel "stylesheet", Attr.href "birdplans.css" ] []
   ]
 
-viewChecks : String -> State -> (String -> Msg) -> Html Msg
-viewChecks label_ state toMsg =
-  div []
-    ([div [] [text label_]]
-    ++ List.map (\i ->
-        label [ Attr.class (if i.selected then "bird_checked" else "bird_unchecked") ]
-          [ text i.name
-          , input
-            [ Attr.type_ "checkbox"
-            , Attr.value i.name
-            , Attr.checked i.selected
-            , onInput toMsg
-            ] []
-          ]
-      ) state.birds)
+birdCheck : Bird -> (String -> Msg) -> Html Msg
+birdCheck bird toMsg =
+  label [ Attr.class (if bird.selected then "bird_checked" else "bird_unchecked") ]
+    [ text bird.name
+    , input
+      [ Attr.type_ "checkbox"
+      , Attr.value bird.name
+      , Attr.checked bird.selected
+      , onInput toMsg
+      ] []
+    ]
+
+viewSelect : String -> String -> (List String) -> (String -> Msg) -> Html Msg
+viewSelect label_ value options toMsg =
+  label []
+    [ (span [] [text label_])
+    , select [ on "change" (JsonD.map toMsg targetValue), onInput toMsg ] (
+      List.map (\i -> option
+        [ Attr.value i
+        , Attr.selected (i == value)
+        ] [ text i ]) options
+      )
+    ]
+
+viewChecks : String -> (List Bird) -> (String -> Msg) -> Html Msg
+viewChecks label_ birds toMsg =
+  div [] (
+    [div [] [text label_]]
+    ++ List.map (\b -> (birdCheck b toMsg)) birds
+    {-
+    ++ List.map (\b -> (birdCheck b toMsg)) (List.filter (\b -> b.selected) birds)
+    ++ [ div [] [] ]
+    ++ List.map (\b -> (birdCheck b toMsg)) (List.filter (\b -> not b.selected) birds)
+    -}
+  )
 
 viewInput : String -> String -> String -> String -> String -> (String -> Msg) -> Html Msg
 viewInput label_ type_ placeholder_ value_ class toMsg =
@@ -338,6 +362,7 @@ latLngToGrid lat lng =
 
 update : Msg -> State -> (State, Cmd Msg)
 update msg state =
+  let _ = Debug.log "msg" msg in
   case msg of
     Search -> ({state | query_string = buildQueryString state}, Cmd.none)
 
@@ -407,14 +432,17 @@ update msg state =
     ReceiveBirds result ->
       case result of
         Err _ -> (state, Cmd.none)
-        Ok birds -> ({state | birds = List.map (\b -> {name=b, selected=False}) (List.sort (List.map first birds))}, Cmd.none)
+        Ok birds -> ({state | birds = List.map (\b -> {name=b, selected=False}) (List.sort birds)}, Cmd.none)
+
+    ReceiveTimeZones result ->
+      case result of
+        Err _ -> (state, Cmd.none)
+        Ok zones -> ({state | timezones = List.sort zones}, Cmd.none)
 
     UpdateBirds bird ->
       let _ = Debug.log "updatebirds" bird in
-      ({state | birds = (List.map (\b -> if b.name == bird then {b | selected = (not b.selected)} else b) state.birds)}, Cmd.none)
-
-    UpdateQueryString ->
-      ({state | query_string = buildQueryString state}, Cmd.none)
+      ({state
+        | birds = (List.sortWith selectedBirdSorter (List.sortBy .name (List.map (\b -> if b.name == bird then {b | selected = (not b.selected)} else b) state.birds)))}, Cmd.none)
 
     ReceivePasses result ->
       case result of
@@ -422,13 +450,32 @@ update msg state =
         Ok passes -> let _ = Debug.log "receivepasses" passes in (state, Cmd.none)
 
     SetTimeZone zone ->
-      ({ state | timezone = zone}, Task.perform SetTimeNow Time.now)
+      ({ state | timezone = zone}, Task.perform SetTimeZoneName Time.getZoneName)
+
+    SetTimeZoneName zonename ->
+      ({ state | timezonename =
+      case zonename of
+        Time.Name name -> name
+        Time.Offset offset -> "GMT" ++ String.fromFloat (toFloat offset / 60.0)
+      }, Task.perform SetTimeNow Time.now)
 
     SetTimeNow now ->
       ({ state | datetime = (dateTimeFormatted state.timezone now), datetime_valid = True}, Cmd.none)
 
     UpdateDateTime new_datetime ->
       ({state | datetime = new_datetime, datetime_valid = validateDateTime new_datetime}, Cmd.none)
+
+    UpdateTimeZone tzname ->
+      let
+          _ = Debug.log "updatetimezone" tzname
+      in
+          ({state | timezonename = tzname}, Cmd.none)
+
+selectedBirdSorter : Bird -> Bird -> Order
+selectedBirdSorter a b =
+  if a.selected == b.selected then EQ
+  else if a.selected then LT
+  else GT
 
 dateTimeFormatted : Time.Zone -> Time.Posix -> String
 dateTimeFormatted tz t =
@@ -449,19 +496,26 @@ dateTimeFormatted tz t =
       Time.Dec -> "12"
       )
   ++ "-" ++ String.fromInt (Time.toDay tz t)
-  ++ " "
+  ++ "T"
   ++ (if (Time.toHour tz t) < 10 then "0" else "") ++ String.fromInt (Time.toHour tz t)
   ++ ":"
   ++ (if (Time.toMinute tz t) < 10 then "0" else "") ++ String.fromInt (Time.toMinute tz t)
 
 validateDateTime : String -> Bool
-validateDateTime s = False
+validateDateTime s = True -- TODO
 
 getAvailableBirds : String -> Cmd Msg
 getAvailableBirds file =
   Http.get
     { url = (UrlB.relative [ file ] [])
-    , expect = Http.expectJson ReceiveBirds (JsonD.field "birds" (JsonD.keyValuePairs JsonD.value))
+    , expect = Http.expectJson ReceiveBirds (JsonD.list JsonD.string)
+    }
+
+getAvailableTimeZones : String -> Cmd Msg
+getAvailableTimeZones file =
+  Http.get
+    { url = (UrlB.relative [ file ] [])
+    , expect = Http.expectJson ReceiveTimeZones (JsonD.list JsonD.string)
     }
 
 queryPasses : State -> Cmd Msg
@@ -506,5 +560,7 @@ buildQueryString state =
   [ UrlB.string "lat" state.lattxt
   , UrlB.string "lng" state.lngtxt
   , UrlB.int "alt" state.min_alt
+  , UrlB.string "tzname" state.timezonename
+  , UrlB.string "window_start" state.datetime
   ] ++ (List.map (\b -> (UrlB.string "bird" b.name)) (List.filter (\b -> b.selected) state.birds))
   )
