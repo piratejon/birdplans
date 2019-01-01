@@ -19,7 +19,7 @@ from skyfield.api import Topos, Loader
 from scipy import optimize
 
 Pass = namedtuple('Pass', ['AOS', 'TCA', 'LOS'])
-WindowPasses = namedtuple('WindowPasses', ['diff', 'passes'])
+WindowPasses = namedtuple('WindowPasses', ['ts', 'diff', 'passes'])
 
 TIMESCALE = Loader('data/skyfield').timescale()
 
@@ -83,7 +83,7 @@ def estimate_window_passes(satellite, location, window_start, window_end):
         for _ in t_peaks if alt_f(_) > 0
     ]
 
-    return WindowPasses(diff, pass_times)
+    return WindowPasses(TIMESCALE, diff, pass_times)
 
 def pass_estimation_wrapper(
         satellite
@@ -116,7 +116,8 @@ def pass_estimation_wrapper(
     )
 
     return WindowPasses(
-        all_passes.diff
+        all_passes.ts
+        , all_passes.diff
         , [
             _pass for _pass in all_passes.passes
             if all_passes.diff.at(_pass.TCA).altaz()[0].degrees >= minimum_altitude

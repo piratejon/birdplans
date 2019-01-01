@@ -20,6 +20,7 @@ from enum import Enum
 import pytz
 
 import maidenhead as mh
+import numpy as np
 
 from birdplans.satellitepasspredictor import pass_estimation_wrapper
 from birdplans.tlemanager import TleManager
@@ -181,27 +182,78 @@ class BirdplansUwsgi:
         '''Passes over a single location.
         '''
 
-        start_response('200 OK', [('Content-Type', 'text/json; charset={}'.format(self.encoding))])
         keys = parse.parse_qs(env['QUERY_STRING'])
-        # yield bytes('\n'.join(['{}: {}'.format(k, v) for k, v in env.items()]), self.encoding)
-        yield bytes('\n'.join(['{}: {}'.format(k, str(v)) for k, v in keys.items()]), self.encoding)
 
-        for bird in keys['bird']:
-            for pass_ in pass_estimation_wrapper(
+        lat = float(keys['lat'][0])
+        lng = float(keys['lng'][0])
+        tz = pytz.timezone(keys['tz'][0])
+        window_start = datetime.replace(
+            datetime.strptime(keys['window_start'][0], "%Y-%m-%dT%H:%M")
+            , tzinfo=tz
+        )
+        alt = int(keys.get('alt', [12])[0])
+        birds = keys['bird']
+
+        start_response('200 OK', [('Content-Type', 'text/json; charset={}'.format(self.encoding))])
+
+        results = []
+
+        for bird in birds:
+            window_pass = pass_estimation_wrapper(
                 self.tle[bird]
-                , (float(keys['lat'][0]), float(keys['lng'][0]))
-                , datetime(2018, 12, 30, tzinfo=pytz.utc)
-                , 5
-                , int(keys.get('min_alt', [12])[0])
-                ):
-                yield bytes(json.dumps(pass_), self.encoding)
+                , (lat, lng)
+                , window_start
+                , 7
+                , alt
+            )
+
+            results.append({
+                'lat': lat,
+                'lng': lng,
+                'bird': bird,
+                'passes': [
+                    {
+                        **{
+                            k: {
+                                't': int(getattr(pass_, k).utc_datetime().timestamp() * 1000),
+                                'az': window_pass.diff.at(getattr(pass_, k)).altaz()[1].degrees
+                            }
+                            for k in pass_._fields
+                        },
+                        **dict(
+                            zip(
+                                ('t', 'alt', 'az'),
+                                list(zip(*list(map(
+                                    lambda x: [ # time
+                                        int(
+                                            window_pass.ts.tai_jd(x)
+                                            .utc_datetime()
+                                            .timestamp() * 1000
+                                        )
+                                    ] + [ # alt, alz
+                                        _.degrees
+                                        for _ in
+                                        window_pass.diff.at(
+                                            window_pass.ts.tai_jd(x)
+                                            ).altaz()[0:2]
+                                    ]
+                                    , np.linspace(pass_.AOS.tai, pass_.LOS.tai, 13)
+                                ))))
+                            )
+                        )
+                    }
+                    for pass_ in window_pass.passes
+                ]
+            })
+
+        yield bytes(json.dumps({'tz': [], 'data': results}), self.encoding)
 
     def default_handler(self, env, start_response):
         '''Default handler, returns the main application.
         '''
 
         with open('static/birdplans.html', 'r') as fin:
-            start_response('200 OK', [('Content-Type', 'text/html; charset={}'.format(self.encoding))])
+            start_response('200 OK', [('Content-Type', 'text/html; charset=' + self.encoding)])
             yield bytes(fin.read(), self.encoding) # TODO less sponge plz
 
     @staticmethod
