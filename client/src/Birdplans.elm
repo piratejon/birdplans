@@ -24,6 +24,7 @@ import Html exposing (..)
 
 import Json.Decode as JsonD
 import Json.Encode as JsonE
+import Json.Decode.Extra as JsonDx
 import Url.Builder as UrlB
 import Url
 
@@ -115,12 +116,23 @@ type alias PassTime =
   }
 
 type alias Pass =
-  { grid: String
+  { grid : String
   , lat : Float
   , lng : Float
   , bird : String
-  , azimuth : PassAzimuth
-  , time : PassTime
+  , azimuth : (List PassAzimuth)
+  , time : (List PassTime)
+  , timezone : CustomTimeZone
+  }
+
+type alias CustomTimeZone =
+  { default : Int
+  , exceptions : List CustomTimeZoneException
+  }
+
+type alias CustomTimeZoneException =
+  { start : Int
+  , offset : Int
   }
 
 subscriptions : State -> Sub Msg
@@ -160,7 +172,7 @@ initialState =
       , min_alt_txt = String.fromInt min_alt
       , birds = []
       , query_string = "query_string"
-      , datetime = ""
+      , datetime = "2018-12-05T13:45"
       , datetime_valid = True
       , timezone = Time.utc
       , timezonename = "UTC"
@@ -525,37 +537,52 @@ queryPasses state =
     , expect = Http.expectJson ReceivePasses passesDecoder
     }
 
-azimuthDecoder : JsonD.Decoder PassAzimuth
+azimuthDecoder : JsonD.Decoder (List PassAzimuth)
 azimuthDecoder =
-  JsonD.map3 PassAzimuth
+  JsonD.list (JsonD.map3 PassAzimuth
     (JsonD.at ["aos"] JsonD.float)
     (JsonD.at ["tca"] JsonD.float)
     (JsonD.at ["los"] JsonD.float)
+  )
 
-timeDecoder : JsonD.Decoder PassTime
+timeDecoder : JsonD.Decoder (List PassTime)
 timeDecoder =
-  JsonD.map3 PassTime
+  JsonD.list (JsonD.map3 PassTime
     (JsonD.at ["aos"] JsonD.int)
     (JsonD.at ["tca"] JsonD.int)
     (JsonD.at ["los"] JsonD.int)
+  )
 
 passesDecoder : JsonD.Decoder (List Pass)
 passesDecoder =
-  JsonD.list (JsonD.map6 Pass
+  JsonD.list (JsonD.map7 Pass
     (JsonD.at ["grid"] JsonD.string)
     (JsonD.at ["lat"] JsonD.float)
     (JsonD.at ["lng"] JsonD.float)
     (JsonD.at ["bird"] JsonD.string)
     (JsonD.at ["azimuth"] azimuthDecoder)
     (JsonD.at ["time"] timeDecoder)
+    (JsonD.at ["timezone"] customTimeZoneDecoder)
     )
+
+customTimeZoneExceptionDecoder : JsonD.Decoder CustomTimeZoneException
+customTimeZoneExceptionDecoder =
+  JsonD.map2 CustomTimeZoneException
+    (JsonD.at ["start"] JsonD.int)
+    (JsonD.at ["offset"] JsonD.int)
+
+customTimeZoneDecoder : JsonD.Decoder CustomTimeZone
+customTimeZoneDecoder =
+  JsonD.map2 CustomTimeZone
+    (JsonD.at ["default"] JsonD.int)
+    (JsonD.at ["exceptions"] (JsonD.list customTimeZoneExceptionDecoder))
 
 targetSelectedValue : JsonD.Decoder String
 targetSelectedValue = (JsonD.field "target" JsonD.string)
 
 buildQueryString : State -> String
 buildQueryString state =
-  UrlB.relative [ "query" ]
+  UrlB.relative [ "one" ]
   (
   [ UrlB.string "lat" state.lattxt
   , UrlB.string "lng" state.lngtxt
