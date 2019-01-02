@@ -12,7 +12,7 @@ import json
 import html
 import sys
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import namedtuple
 from urllib import parse
 from enum import Enum
@@ -24,6 +24,7 @@ import numpy as np
 
 from birdplans.satellitepasspredictor import pass_estimation_wrapper
 from birdplans.tlemanager import TleManager
+from birdplans import tzhelper
 
 class Severity(Enum):
     '''Severity for returned API messages.
@@ -187,10 +188,8 @@ class BirdplansUwsgi:
         lat = float(keys['lat'][0])
         lng = float(keys['lng'][0])
         tz = pytz.timezone(keys['tz'][0])
-        window_start = datetime.replace(
-            datetime.strptime(keys['window_start'][0], "%Y-%m-%dT%H:%M")
-            , tzinfo=tz
-        )
+        window_start = tz.localize(datetime.strptime(keys['window_start'][0], "%Y-%m-%dT%H:%M"))
+        window_stop = window_start + timedelta(days=7)
         alt = int(keys.get('alt', [12])[0])
         birds = keys['bird']
 
@@ -198,12 +197,17 @@ class BirdplansUwsgi:
 
         results = []
 
+        # TODO separate function for this
+        # JSON optimizations:
+        # reduce timestamp transmission by offsetting from the smallest-observed value
+        # truncate altaz floats to two decimal places
+        # send altaz curve parameters instead of points
         for bird in birds:
             window_pass = pass_estimation_wrapper(
                 self.tle[bird]
                 , (lat, lng)
                 , window_start
-                , 7
+                , window_stop
                 , alt
             )
 
@@ -246,7 +250,18 @@ class BirdplansUwsgi:
                 ]
             })
 
-        yield bytes(json.dumps({'tz': [], 'data': results}), self.encoding)
+        yield bytes(
+            json.dumps(
+                {
+                    'tz': {
+                        'name': str(tz),
+                        'changes': tzhelper.make_tzinfo(tz, window_start, window_stop)
+                    },
+                    'data': results
+                }
+            )
+            , self.encoding
+        )
 
     def default_handler(self, env, start_response):
         '''Default handler, returns the main application.
