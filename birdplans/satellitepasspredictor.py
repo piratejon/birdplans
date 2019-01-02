@@ -89,24 +89,24 @@ def pass_estimation_wrapper(
         satellite
         , latlng
         , window_start
-        , window_days
+        , window_stop
         , minimum_altitude=None):
     '''Call estimate_window_passes with skyfield API objects.
 
     :param satellite: SkyField satellite object to compute passes for
     :param latlng: Earth reference point expressed as a tuple of floats
     :param window_start: pass estimation window start time as tz-aware Python datetime
-    :param window_days: how many days to estimate passes for
+    :param window_stop: pass estimation window end time as tz-aware Python datetime
     :param minimum_altitude: minimum peak altitude pass filter, default 0
     '''
 
-    # pylint: disable=too-many-arguments
-    # Necessary to avoid passing global state along with parameters.
-
     minimum_altitude = 0 if minimum_altitude is None else minimum_altitude
 
+    if window_start > window_stop:
+        window_start, window_stop = window_stop, window_start
+
     time_start = TIMESCALE.utc(window_start)
-    time_end = TIMESCALE.utc(window_start + datetime.timedelta(days=window_days))
+    time_end = TIMESCALE.utc(window_stop)
 
     all_passes = estimate_window_passes(
         satellite

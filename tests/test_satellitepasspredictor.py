@@ -25,11 +25,13 @@ class TestSatellitePassPredictor(unittest.TestCase):
         '''make sure we can guess where it's gonna be
         '''
         tle = TestTleManager()
+        window_start = datetime.datetime(2018, 11, 24, tzinfo=pytz.utc)
+        window_stop = window_start + datetime.timedelta(days=5)
         result = pass_estimation_wrapper(
             tle['AO-91']
             , (35.0, -98.0)
-            , datetime.datetime(2018, 11, 24, tzinfo=pytz.utc)
-            , 5
+            , window_start
+            , window_stop
             , 30.0
         )
         self.assertEqual(len(result.passes), 8)
