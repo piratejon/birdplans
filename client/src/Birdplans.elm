@@ -103,6 +103,8 @@ type alias State =
   , timezone : Time.Zone
   , timezonename : String
   , timezones : List String
+  , pass_results : Maybe PassResults
+  , err : Maybe Http.Error
   }
 
 type alias CustomTimeZone =
@@ -188,7 +190,18 @@ initialState =
       , timezone = Time.utc
       , timezonename = "UTC"
       , timezones = []
+      , pass_results = Nothing
+      , err = Nothing
       }
+
+httpError : Http.Error -> String
+httpError t =
+  case t of
+    Http.Timeout -> "Timeout"
+    Http.BadUrl u -> "Bad URL " ++ u
+    Http.NetworkError -> "Network error"
+    Http.BadStatus s -> "Bad Status " ++ (String.fromInt s)
+    Http.BadBody b -> "Bad body " ++ b
 
 view : State -> Html Msg
 view state =
@@ -213,10 +226,26 @@ view state =
         ]
         , input [ Attr.type_ "button", Attr.value "Search", onClick Search ] []
         , input [ Attr.type_ "button", Attr.value "Search2", onClick RunQuery ] []
+        , div [ Attr.class (case state.err of
+          Nothing -> "ok"
+          Just _ -> "err"
+          ) ]
+          [ text (case state.err of
+            Nothing -> ""
+            Just e -> httpError e)
+          ]
+        , div [ Attr.class "results" ]
+            (case state.pass_results of
+            Just p -> [renderPassResults state]
+            Nothing -> [])
         , text state.query_string
       ]
     , Html.node "link" [ Attr.rel "stylesheet", Attr.href "birdplans.css" ] []
   ]
+
+renderPassResults : State -> Html Msg
+renderPassResults state =
+  div [] [text "we did it!"]
 
 birdCheck : Bird -> (String -> Msg) -> Html Msg
 birdCheck bird toMsg =
@@ -472,8 +501,11 @@ update msg state =
 
     ReceivePasses result ->
       case result of
-        Err _ -> (state, Cmd.none)
-        Ok passes -> let _ = Debug.log "receivepasses" passes in (state, Cmd.none)
+        Err what -> ({state | pass_results = Nothing, err = Just what}, Cmd.none)
+        Ok pass_results -> -- let _ = Debug.log "receivepasses" passes
+            let _ = Debug.log "receivepasses" pass_results
+            in
+                ({state | pass_results = Just pass_results}, Cmd.none)
 
     SetTimeZone zone ->
       ({ state | timezone = zone}, Task.perform SetTimeZoneName Time.getZoneName)
