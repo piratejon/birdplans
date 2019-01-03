@@ -32,7 +32,7 @@ import Char exposing (toCode, fromCode)
 
 birdsUrl = "/birds.json"
 zonesUrl = "/tz.json"
-oneUrl = "/tztest.json"
+oneUrl = "/one.json"
 
 type Msg
   = Search
@@ -148,6 +148,14 @@ type alias PassPoint =
   , azimuth : Float
   }
 
+type alias PreparedResult =
+  { bird : String
+  , time : {aos:Int, tca:Int, los:Int}
+  , el : Float
+  , dur : Int
+  , az : {aos:Int, tca:Int, los:Int}
+  }
+
 subscriptions : State -> Sub Msg
 subscriptions state =
   Sub.none
@@ -226,6 +234,7 @@ view state =
         ]
         , input [ Attr.type_ "button", Attr.value "Search", onClick Search ] []
         , input [ Attr.type_ "button", Attr.value "Search2", onClick RunQuery ] []
+        , span [] [ text state.query_string ]
         , div [ Attr.class (case state.err of
           Nothing -> "ok"
           Just _ -> "err"
@@ -236,16 +245,59 @@ view state =
           ]
         , div [ Attr.class "results" ]
             (case state.pass_results of
-            Just p -> [renderPassResults state]
+            Just p -> [renderPassResults state p]
             Nothing -> [])
-        , text state.query_string
       ]
     , Html.node "link" [ Attr.rel "stylesheet", Attr.href "birdplans.css" ] []
   ]
 
-renderPassResults : State -> Html Msg
-renderPassResults state =
-  div [] [text "we did it!"]
+tableHeader : List {h:String, s:List String} -> List (Html Msg)
+tableHeader headers =
+  [ tr [] (List.map (\i -> (th [Attr.colspan (List.length i.s), Attr.rowspan (if (List.length i.s) == 0 then 2 else 1)] [text i.h])) headers)
+  , tr [] (List.map (\i -> (th [] [text i])) (List.concat (List.map (\h -> h.s) headers))) ]
+
+prepareBirdResults : BirdPass -> Time.Zone -> List PreparedResult
+prepareBirdResults b tz =
+  List.map (\p ->
+    { bird = b.bird
+    , time = {aos = p.aos.time, tca = p.tca.time, los = p.los.time}
+    , el = (case (List.maximum p.altitudes) of
+      Just a -> a
+      Nothing -> 0)
+    , dur = p.los.time - p.aos.time
+    , az = {aos = round p.aos.azimuth, tca = round p.tca.azimuth, los = round p.los.azimuth}
+    })
+    b.passes
+
+prepareResults : PassResults -> List PreparedResult
+prepareResults p =
+  let
+      tz = Time.customZone 0 p.timezone.exceptions
+  in
+      List.concat (List.map (\b -> (prepareBirdResults b tz)) p.bird_passes)
+
+tableBody : (List PreparedResult) -> Html Msg
+tableBody ps =
+  tbody []
+    (List.map (\p ->
+      (tr [] [td [] [text p.bird]])
+      ) ps)
+
+renderPassResults : State -> PassResults -> Html Msg
+renderPassResults state p =
+  div []
+    [ table []
+      ((tableHeader
+        [ {h="Bird", s=[]}
+        , {h=p.timezone.name, s=["AOS", "LOS"]}
+        , {h="UTC", s=["AOS", "LOS"]}
+        , {h="Max El.", s=[]}
+        , {h="Duration", s=[]}
+        , {h="Azimuth", s=["AOS", "TCA", "LOS"]}
+        , {h="Chart", s=[]}
+        , {h="TLE Age", s=[]}
+        ]) ++ [tableBody (prepareResults p)])
+      ]
 
 birdCheck : Bird -> (String -> Msg) -> Html Msg
 birdCheck bird toMsg =
@@ -553,7 +605,8 @@ dateTimeFormatted tz t =
       Time.Nov -> "11"
       Time.Dec -> "12"
       )
-  ++ "-" ++ String.fromInt (Time.toDay tz t)
+  ++ "-"
+  ++ (if (Time.toDay tz t) < 10 then "0" else "") ++ String.fromInt (Time.toDay tz t)
   ++ "T"
   ++ (if (Time.toHour tz t) < 10 then "0" else "") ++ String.fromInt (Time.toHour tz t)
   ++ ":"
