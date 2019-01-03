@@ -32,9 +32,11 @@ import Char exposing (toCode, fromCode)
 
 birdsUrl = "/birds.json"
 zonesUrl = "/tz.json"
+oneUrl = "/tztest.json"
 
 type Msg
   = Search
+  | RunQuery
   | UpdateGrid String
   | UpdateGridRef String
   | UpdateLat String
@@ -44,7 +46,7 @@ type Msg
   | UpdateDateTime String
   | ReceiveBirds (Result Http.Error (List String))
   | ReceiveTimeZones (Result Http.Error (List String))
-  | ReceivePasses (Result Http.Error (List Pass))
+  | ReceivePasses (Result Http.Error PassResults)
   | UpdateBirds String
   | SetTimeZone Time.Zone
   | SetTimeZoneName Time.ZoneName
@@ -103,29 +105,12 @@ type alias State =
   , timezones : List String
   }
 
-type alias PassAzimuth =
-  { aos : Float
-  , tca : Float
-  , los : Float
-  }
-
-type alias PassTime =
-  { aos : Int
-  , tca : Int
-  , los : Int
-  }
-
-type alias Pass =
-  { grid : String
-  , lat : Float
-  , lng : Float
-  , bird : String
-  , azimuth : (List PassAzimuth)
-  , time : (List PassTime)
-  , timezone : CustomTimeZone
-  }
-
 type alias CustomTimeZone =
+  { name : String
+  , exceptions : List CustomTimeZoneException
+  }
+
+type alias ElmCustomTimeZone = 
   { default : Int
   , exceptions : List CustomTimeZoneException
   }
@@ -133,6 +118,32 @@ type alias CustomTimeZone =
 type alias CustomTimeZoneException =
   { start : Int
   , offset : Int
+  }
+
+type alias PassResults =
+  { timezone : CustomTimeZone
+  , bird_passes : List BirdPass
+  }
+
+type alias BirdPass =
+  { bird : String
+  , lat : Float
+  , lng : Float
+  , passes : List Pass
+  }
+
+type alias Pass =
+  { aos : PassPoint
+  , tca : PassPoint
+  , los : PassPoint
+  , times : List Int
+  , altitudes : List Float
+  , azimuths : List Float
+  }
+
+type alias PassPoint =
+  { time : Int
+  , azimuth : Float
   }
 
 subscriptions : State -> Sub Msg
@@ -201,6 +212,7 @@ view state =
         , viewChecks "Birds" state.birds UpdateBirds
         ]
         , input [ Attr.type_ "button", Attr.value "Search", onClick Search ] []
+        , input [ Attr.type_ "button", Attr.value "Search2", onClick RunQuery ] []
         , text state.query_string
       ]
     , Html.node "link" [ Attr.rel "stylesheet", Attr.href "birdplans.css" ] []
@@ -378,6 +390,8 @@ update msg state =
   case msg of
     Search -> ({state | query_string = buildQueryString state}, Cmd.none)
 
+    RunQuery -> (state, queryPasses state)
+
     UpdateGridRef _ -> (state, Cmd.none)
 
     UpdateLat newlat ->
@@ -533,37 +547,9 @@ getAvailableTimeZones file =
 queryPasses : State -> Cmd Msg
 queryPasses state =
   Http.get
-    { url = state.query_string
-    , expect = Http.expectJson ReceivePasses passesDecoder
+    { url = (UrlB.relative [ oneUrl ] []) -- state.query_string
+    , expect = Http.expectJson ReceivePasses passResultsDecoder
     }
-
-azimuthDecoder : JsonD.Decoder (List PassAzimuth)
-azimuthDecoder =
-  JsonD.list (JsonD.map3 PassAzimuth
-    (JsonD.at ["aos"] JsonD.float)
-    (JsonD.at ["tca"] JsonD.float)
-    (JsonD.at ["los"] JsonD.float)
-  )
-
-timeDecoder : JsonD.Decoder (List PassTime)
-timeDecoder =
-  JsonD.list (JsonD.map3 PassTime
-    (JsonD.at ["aos"] JsonD.int)
-    (JsonD.at ["tca"] JsonD.int)
-    (JsonD.at ["los"] JsonD.int)
-  )
-
-passesDecoder : JsonD.Decoder (List Pass)
-passesDecoder =
-  JsonD.list (JsonD.map7 Pass
-    (JsonD.at ["grid"] JsonD.string)
-    (JsonD.at ["lat"] JsonD.float)
-    (JsonD.at ["lng"] JsonD.float)
-    (JsonD.at ["bird"] JsonD.string)
-    (JsonD.at ["azimuth"] azimuthDecoder)
-    (JsonD.at ["time"] timeDecoder)
-    (JsonD.at ["timezone"] customTimeZoneDecoder)
-    )
 
 customTimeZoneExceptionDecoder : JsonD.Decoder CustomTimeZoneException
 customTimeZoneExceptionDecoder =
@@ -574,8 +560,38 @@ customTimeZoneExceptionDecoder =
 customTimeZoneDecoder : JsonD.Decoder CustomTimeZone
 customTimeZoneDecoder =
   JsonD.map2 CustomTimeZone
-    (JsonD.at ["default"] JsonD.int)
-    (JsonD.at ["exceptions"] (JsonD.list customTimeZoneExceptionDecoder))
+    (JsonD.at ["name"] JsonD.string)
+    (JsonD.at ["changes"] (JsonD.list customTimeZoneExceptionDecoder))
+
+passPointDecoder : JsonD.Decoder PassPoint
+passPointDecoder =
+  JsonD.map2 PassPoint
+    (JsonD.at ["t"] JsonD.int)
+    (JsonD.at ["az"] JsonD.float)
+
+passDecoder : JsonD.Decoder Pass
+passDecoder =
+  JsonD.map6 Pass
+    (JsonD.at ["AOS"] passPointDecoder)
+    (JsonD.at ["TCA"] passPointDecoder)
+    (JsonD.at ["LOS"] passPointDecoder)
+    (JsonD.at ["t"] (JsonD.list JsonD.int))
+    (JsonD.at ["alt"] (JsonD.list JsonD.float))
+    (JsonD.at ["az"] (JsonD.list JsonD.float))
+
+birdPassDecoder : JsonD.Decoder BirdPass
+birdPassDecoder =
+  JsonD.map4 BirdPass
+    (JsonD.at ["bird"] JsonD.string)
+    (JsonD.at ["lat"] JsonD.float)
+    (JsonD.at ["lng"] JsonD.float)
+    (JsonD.at ["passes"] (JsonD.list passDecoder))
+
+passResultsDecoder : JsonD.Decoder PassResults
+passResultsDecoder =
+  JsonD.map2 PassResults
+    (JsonD.at ["tz"] customTimeZoneDecoder)
+    (JsonD.at ["data"] (JsonD.list birdPassDecoder))
 
 targetSelectedValue : JsonD.Decoder String
 targetSelectedValue = (JsonD.field "target" JsonD.string)
