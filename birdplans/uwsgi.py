@@ -189,7 +189,7 @@ class BirdplansUwsgi:
         lng = float(keys['lng'][0])
         tz = pytz.timezone(keys['tz'][0])
         window_start = tz.localize(datetime.strptime(keys['window_start'][0], "%Y-%m-%dT%H:%M"))
-        window_stop = window_start + timedelta(days=7)
+        window_stop = window_start + timedelta(days=5)
         alt = int(keys.get('alt', [12])[0])
         birds = keys['bird']
 
@@ -267,7 +267,7 @@ class BirdplansUwsgi:
         '''Default handler, returns the main application.
         '''
 
-        with open('static/birdplans.html', 'r') as fin:
+        with open('static/index.html', 'r') as fin:
             start_response('200 OK', [('Content-Type', 'text/html; charset=' + self.encoding)])
             yield bytes(fin.read(), self.encoding) # TODO less sponge plz
 
