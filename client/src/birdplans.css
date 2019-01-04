@@ -33,3 +33,11 @@ div > label {
 div > label.bird_checked {
   background-color: #55ff55;
 }
+
+table { border-collapse: collapse; }
+table td { border-left: 1px solid black; border-right: 1px solid black; }
+table td:first-child { border-left: none; }
+table td:last-child { border-right: none; }
+tr.local-date-first-row { border-top: 1px solid black; }
+td.utc-date-first-row { border-top: 1px solid black; }
+td.bird-first-row { border-top: 1px solid black; }

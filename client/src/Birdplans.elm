@@ -36,7 +36,6 @@ oneUrl = "/one.json"
 
 type Msg
   = Search
-  | RunQuery
   | UpdateGrid String
   | UpdateGridRef String
   | UpdateLat String
@@ -233,7 +232,6 @@ view state =
         , viewChecks "Birds" state.birds UpdateBirds
         ]
         , input [ Attr.type_ "button", Attr.value "Search", onClick Search ] []
-        , input [ Attr.type_ "button", Attr.value "Search2", onClick RunQuery ] []
         , span [] [ text state.query_string ]
         , div [ Attr.class (case state.err of
           Nothing -> "ok"
@@ -284,48 +282,99 @@ formatMSDuration t =
         ++ (if (modBy 60 ts) < 10 then "0" else "")
         ++ String.fromInt (modBy 60 ts)
 
+item : List {date : String, running_count : Int}
+item = []
+
+runLength : List a -> List {item : a, count : Int, start : Bool}
+runLength a =
+    let
+        t = List.reverse (List.map (\c -> { item = c, count = 1, start = False }) a)
+    in
+        List.reverse (
+            List.foldl (\new acc ->
+                case acc of
+                    y :: ys -> [{new | start = (if new.item == y.item then False else True)}] ++ acc
+                    [] -> [{new | start = True}]
+            ) []
+            (
+                List.foldl (\new acc ->
+                    case acc of
+                        y :: ys -> [{new | count = (if new.item == y.item then y.count + 1 else 1)}] ++ acc
+                        [] -> [new]
+                ) [] t
+            )
+        )
+
 tableBody : Time.Zone -> (List PreparedResult) -> Html Msg
 tableBody tz ps =
-  tbody []
-    (List.map (\p ->
-      (tr []
-        [ td [] [ text p.bird ]
-        , td [] [ text (
-          (dateFormatted tz (Time.millisToPosix p.time.aos))
-            ++ " " ++ (timeFormatted tz (Time.millisToPosix p.time.aos))) ]
-        , td [] [ text (timeFormatted tz (Time.millisToPosix p.time.los)) ]
-        , td [] [ text (
-          (dateFormatted Time.utc (Time.millisToPosix p.time.aos))
-            ++ " " ++ (timeFormatted tz (Time.millisToPosix p.time.aos))) ]
-        , td [] [ text (timeFormatted Time.utc (Time.millisToPosix p.time.los)) ]
-        , td [] [ text (String.fromInt (round p.el)) ]
-        , td [] [ text (formatMSDuration p.dur) ]
-        , td [] [ text (String.fromInt p.az.aos) ]
-        , td [] [ text (String.fromInt p.az.tca) ]
-        , td [] [ text (String.fromInt p.az.los) ]
-        , td [] [ text "Chart Link" ]
-        , td [] [ text "1hr" ]
-        ]
-      )) ps)
-
-resultCompareEarliest : PreparedResult -> PreparedResult -> Order
-resultCompareEarliest a b = GT
+  let
+      dates = List.map (\p -> dateFormatted tz (Time.millisToPosix p.time.aos)) ps
+  in
+      tbody []
+        (List.map4
+          (\p local_dt bird utc_dt ->
+            (tr (if local_dt.start then [Attr.class "local-date-first-row"] else [])
+              (
+                (if local_dt.start then [td [Attr.rowspan local_dt.count] [ text (dateFormatted tz (Time.millisToPosix p.time.aos))]] else [])
+                ++
+                [ td [] [ text (timeFormatted tz (Time.millisToPosix p.time.aos)) ]
+                , td [] [ text (timeFormatted tz (Time.millisToPosix p.time.los)) ]
+                ]
+                ++
+                (if bird.start then [td [Attr.class "bird-first-row", Attr.rowspan bird.count] [ text p.bird ]] else [])
+                ++
+                (if utc_dt.start then [td [Attr.class "utc-date-first-row", Attr.rowspan utc_dt.count] [ text (dateFormatted Time.utc (Time.millisToPosix p.time.aos))]] else [])
+                ++
+                [ td [] [ text ((timeFormatted Time.utc (Time.millisToPosix p.time.aos)) ++ "Z") ]
+                , td [] [ text ((timeFormatted Time.utc (Time.millisToPosix p.time.los)) ++ "Z") ]
+                , td [] [ text (String.fromInt (round p.el)) ]
+                , td [] [ text (formatMSDuration p.dur) ]
+                , td [] [ text (String.fromInt p.az.aos) ]
+                , td [] [ text (String.fromInt p.az.tca) ]
+                , td [] [ text (String.fromInt p.az.los) ]
+                , td [] [ text "PNG SVG" ]
+                , td [] [ text "1hr" ]
+                ]
+              )
+            )
+          )
+          ps
+          (runLength (List.map (\p -> dateFormatted tz (Time.millisToPosix p.time.aos)) ps))
+          (runLength (List.map (\p -> p.bird) ps))
+          (runLength (List.map (\p -> dateFormatted Time.utc (Time.millisToPosix p.time.aos)) ps))
+          )
 
 renderPassResults : State -> PassResults -> Html Msg
 renderPassResults state p =
-  div []
-    [ table []
-      ((tableHeader
-        [ {h="Bird", s=[]}
-        , {h=p.timezone.name, s=["AOS", "LOS"]}
-        , {h="UTC", s=["AOS", "LOS"]}
-        , {h="Max El.", s=[]}
-        , {h="Duration", s=[]}
-        , {h="Azimuth", s=["AOS", "TCA", "LOS"]}
-        , {h="Chart", s=[]}
-        , {h="TLE Age", s=[]}
-        ]) ++ [tableBody state.timezone (List.sortBy (\c -> c.time.aos) (prepareResults p))])
-      ]
+  let
+      sorted = (List.sortBy (\c -> c.time.aos) (prepareResults p))
+  in
+      div []
+        [ table []
+          [ thead []
+            [ tr []
+              [ th [Attr.colspan 3] [text p.timezone.name]
+              , th [Attr.rowspan 2] [text "Bird"]
+              , th [Attr.colspan 3] [text "UTC"]
+              , th [Attr.rowspan 2] [text "Max El."]
+              , th [Attr.rowspan 2] [text "Duration"]
+              , th [Attr.colspan 3] [text "Azimuth"]
+              , th [Attr.rowspan 2] [text "Chart"]
+              , th [Attr.rowspan 2] [text "TLE"]
+              ]
+            , tr []
+              [ th [Attr.colspan 2] [text "AOS"]
+              , th [] [text "LOS"]
+              , th [Attr.colspan 2] [text "AOS"]
+              , th [] [text "LOS"]
+              , th [] [text "AOS"]
+              , th [] [text "TCA"]
+              , th [] [text "LOS"]
+              ]
+            ]
+            , tableBody state.timezone sorted
+          ]
+        ]
 
 birdCheck : Bird -> (String -> Msg) -> Html Msg
 birdCheck bird toMsg =
@@ -497,9 +546,10 @@ update : Msg -> State -> (State, Cmd Msg)
 update msg state =
   let _ = Debug.log "msg" msg in
   case msg of
-    Search -> ({state | query_string = buildQueryString state}, Cmd.none)
 
-    RunQuery -> ({state | query_string = buildQueryString state}, queryPasses state)
+    Search ->
+      let query_string = buildQueryString state in
+      ({state | query_string = query_string}, queryPasses {state | query_string = query_string})
 
     UpdateGridRef _ -> (state, Cmd.none)
 
