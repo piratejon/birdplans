@@ -30,6 +30,9 @@ import Url
 
 import Char exposing (toCode, fromCode)
 
+import Bytes.Encode
+import Base64
+
 birdsUrl = "/birds"
 zonesUrl = "/tz"
 oneUrl = "/one.json"
@@ -344,13 +347,43 @@ tableBody tz ps =
           (runLength (List.map (\p -> dateFormatted Time.utc (Time.millisToPosix p.time.aos)) ps))
           )
 
+csvFormatResult : Time.Zone -> PreparedResult -> String
+csvFormatResult tz p =
+  String.join ","
+    [ String.fromInt p.time.aos
+    , String.fromInt p.time.tca
+    , String.fromInt p.time.los
+    , p.bird
+    , String.fromInt (round p.el)
+    , String.fromInt p.dur
+    , String.fromInt p.az.aos
+    , String.fromInt p.az.tca
+    , String.fromInt p.az.los
+    ]
+
+generateCsvDataUri : Time.Zone -> List PreparedResult -> String
+generateCsvDataUri tz ps =
+  "data:text/csv;charset=UTF-8;base64;"
+    ++ (case (Base64.fromBytes (
+      Bytes.Encode.encode (
+        Bytes.Encode.string (String.join "\n" (List.map (\p -> (csvFormatResult tz p)) ps))
+      )
+    )) of
+      Just b -> b
+      Nothing -> "error encoding csv"
+      )
+
 renderPassResults : State -> PassResults -> Html Msg
 renderPassResults state p =
   let
       sorted = (List.sortBy (\c -> c.time.aos) (prepareResults p))
   in
       div []
-        [ table []
+        [ a
+          [ Attr.href (generateCsvDataUri state.timezone sorted)
+          , Attr.download "birdplans.csv"
+          ] [ text "Download CSV" ]
+        , table []
           [ thead []
             [ tr []
               [ th [Attr.colspan 3] [text p.timezone.name]
