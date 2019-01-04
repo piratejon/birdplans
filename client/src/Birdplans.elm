@@ -22,6 +22,8 @@ import Html.Attributes as Attr
 import Html.Events exposing (..)
 import Html exposing (..)
 
+import Regex exposing (replace)
+
 import Json.Decode as JsonD
 import Json.Encode as JsonE
 import Json.Decode.Extra as JsonDx
@@ -347,26 +349,77 @@ tableBody tz ps =
           (runLength (List.map (\p -> dateFormatted Time.utc (Time.millisToPosix p.time.aos)) ps))
           )
 
-csvFormatResult : Time.Zone -> PreparedResult -> String
-csvFormatResult tz p =
+csvHeader : String
+csvHeader =
   String.join ","
-    [ String.fromInt p.time.aos
-    , String.fromInt p.time.tca
-    , String.fromInt p.time.los
-    , p.bird
-    , String.fromInt (round p.el)
-    , String.fromInt p.dur
-    , String.fromInt p.az.aos
-    , String.fromInt p.az.tca
-    , String.fromInt p.az.los
-    ]
+    (List.map quote
+      [ "Bird"
+      , "Grid"
+      , "Latitude"
+      , "Longitude"
+      , "UTC AOS Timestamp"
+      , "UTC TCA Timestamp"
+      , "UTC LOS Timestamp"
+      , "Local Timezone"
+      , "Local AOS"
+      , "Local TCA"
+      , "Local LOS"
+      , "Max Elevation"
+      , "Pass Duration"
+      , "UTC AOS"
+      , "UTC TCA"
+      , "UTC LOS"
+      , "Azimuth AOS"
+      , "Azimuth TCA"
+      , "Azimuth LOS"
+      ])
 
-generateCsvDataUri : Time.Zone -> List PreparedResult -> String
-generateCsvDataUri tz ps =
-  "data:text/csv;charset=UTF-8;base64;"
+quote : String -> String
+quote s =
+  "\"" ++ String.fromList (List.foldl (\new acc ->
+    case new of
+      '\"' -> [new, new] ++ acc
+      _ -> [new] ++ acc
+  ) [] (List.reverse (String.toList s))) ++ "\""
+
+csvFormatResult : State -> PreparedResult -> String
+csvFormatResult s p =
+  let
+      aos = Time.millisToPosix p.time.aos
+      tca = Time.millisToPosix p.time.tca
+      los = Time.millisToPosix p.time.los
+  in
+      String.join ","
+        (List.map quote
+          [ p.bird
+          , s.grid
+          , s.lattxt
+          , s.lngtxt
+          , String.fromInt p.time.aos
+          , String.fromInt p.time.tca
+          , String.fromInt p.time.los
+          , s.timezonename
+          , (dateFormatted s.timezone aos) ++ " " ++ (timeFormatted s.timezone aos)
+          , (dateFormatted s.timezone tca) ++ " " ++ (timeFormatted s.timezone tca)
+          , (dateFormatted s.timezone los) ++ " " ++ (timeFormatted s.timezone los)
+          , String.fromInt (round p.el)
+          , (dateFormatted Time.utc aos) ++ " " ++ (timeFormatted Time.utc aos)
+          , (dateFormatted Time.utc tca) ++ " " ++ (timeFormatted Time.utc tca)
+          , (dateFormatted Time.utc los) ++ " " ++ (timeFormatted Time.utc los)
+          , formatMSDuration p.dur
+          , String.fromInt p.az.aos
+          , String.fromInt p.az.tca
+          , String.fromInt p.az.los
+          ])
+
+generateCsvDataUri : State -> List PreparedResult -> String
+generateCsvDataUri state ps =
+  "data:text/csv;charset=UTF-8;base64,"
     ++ (case (Base64.fromBytes (
       Bytes.Encode.encode (
-        Bytes.Encode.string (String.join "\n" (List.map (\p -> (csvFormatResult tz p)) ps))
+        Bytes.Encode.string (
+          (csvHeader ++ "\n" ++ (String.join "\n" (List.map (\p -> (csvFormatResult state p)) ps)))
+        )
       )
     )) of
       Just b -> b
@@ -380,7 +433,7 @@ renderPassResults state p =
   in
       div []
         [ a
-          [ Attr.href (generateCsvDataUri state.timezone sorted)
+          [ Attr.href (generateCsvDataUri state sorted)
           , Attr.download "birdplans.csv"
           ] [ text "Download CSV" ]
         , table []
