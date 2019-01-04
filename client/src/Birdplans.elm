@@ -30,8 +30,8 @@ import Url
 
 import Char exposing (toCode, fromCode)
 
-birdsUrl = "/birds.json"
-zonesUrl = "/tz.json"
+birdsUrl = "/birds"
+zonesUrl = "/tz"
 oneUrl = "/one.json"
 
 type Msg
@@ -276,12 +276,40 @@ prepareResults p =
   in
       List.concat (List.map (\b -> (prepareBirdResults b tz)) p.bird_passes)
 
-tableBody : (List PreparedResult) -> Html Msg
-tableBody ps =
+formatMSDuration : Int -> String
+formatMSDuration t =
+  let ts = (//) t 1000 in
+      (String.fromInt ((//) ts 60))
+        ++ ":"
+        ++ (if (modBy 60 ts) < 10 then "0" else "")
+        ++ String.fromInt (modBy 60 ts)
+
+tableBody : Time.Zone -> (List PreparedResult) -> Html Msg
+tableBody tz ps =
   tbody []
     (List.map (\p ->
-      (tr [] [td [] [text p.bird]])
-      ) ps)
+      (tr []
+        [ td [] [ text p.bird ]
+        , td [] [ text (
+          (dateFormatted tz (Time.millisToPosix p.time.aos))
+            ++ " " ++ (timeFormatted tz (Time.millisToPosix p.time.aos))) ]
+        , td [] [ text (timeFormatted tz (Time.millisToPosix p.time.los)) ]
+        , td [] [ text (
+          (dateFormatted Time.utc (Time.millisToPosix p.time.aos))
+            ++ " " ++ (timeFormatted tz (Time.millisToPosix p.time.aos))) ]
+        , td [] [ text (timeFormatted Time.utc (Time.millisToPosix p.time.los)) ]
+        , td [] [ text (String.fromInt (round p.el)) ]
+        , td [] [ text (formatMSDuration p.dur) ]
+        , td [] [ text (String.fromInt p.az.aos) ]
+        , td [] [ text (String.fromInt p.az.tca) ]
+        , td [] [ text (String.fromInt p.az.los) ]
+        , td [] [ text "Chart Link" ]
+        , td [] [ text "1hr" ]
+        ]
+      )) ps)
+
+resultCompareEarliest : PreparedResult -> PreparedResult -> Order
+resultCompareEarliest a b = GT
 
 renderPassResults : State -> PassResults -> Html Msg
 renderPassResults state p =
@@ -296,7 +324,7 @@ renderPassResults state p =
         , {h="Azimuth", s=["AOS", "TCA", "LOS"]}
         , {h="Chart", s=[]}
         , {h="TLE Age", s=[]}
-        ]) ++ [tableBody (prepareResults p)])
+        ]) ++ [tableBody state.timezone (List.sortBy (\c -> c.time.aos) (prepareResults p))])
       ]
 
 birdCheck : Bird -> (String -> Msg) -> Html Msg
@@ -471,7 +499,7 @@ update msg state =
   case msg of
     Search -> ({state | query_string = buildQueryString state}, Cmd.none)
 
-    RunQuery -> (state, queryPasses state)
+    RunQuery -> ({state | query_string = buildQueryString state}, queryPasses state)
 
     UpdateGridRef _ -> (state, Cmd.none)
 
@@ -587,8 +615,8 @@ selectedBirdSorter a b =
   else if a.selected then LT
   else GT
 
-dateTimeFormatted : Time.Zone -> Time.Posix -> String
-dateTimeFormatted tz t =
+dateFormatted : Time.Zone -> Time.Posix -> String
+dateFormatted tz t =
   String.fromInt (Time.toYear tz t)
   ++ "-" ++ (
     case (Time.toMonth tz t) of
@@ -607,10 +635,16 @@ dateTimeFormatted tz t =
       )
   ++ "-"
   ++ (if (Time.toDay tz t) < 10 then "0" else "") ++ String.fromInt (Time.toDay tz t)
-  ++ "T"
-  ++ (if (Time.toHour tz t) < 10 then "0" else "") ++ String.fromInt (Time.toHour tz t)
+
+timeFormatted : Time.Zone -> Time.Posix -> String
+timeFormatted tz t =
+  (if (Time.toHour tz t) < 10 then "0" else "") ++ String.fromInt (Time.toHour tz t)
   ++ ":"
   ++ (if (Time.toMinute tz t) < 10 then "0" else "") ++ String.fromInt (Time.toMinute tz t)
+
+dateTimeFormatted : Time.Zone -> Time.Posix -> String
+dateTimeFormatted tz t =
+  (dateFormatted tz t) ++ "T" ++ (timeFormatted tz t)
 
 validateDateTime : String -> Bool
 validateDateTime s = True -- TODO
@@ -632,7 +666,7 @@ getAvailableTimeZones file =
 queryPasses : State -> Cmd Msg
 queryPasses state =
   Http.get
-    { url = (UrlB.relative [ oneUrl ] []) -- state.query_string
+    { url = state.query_string
     , expect = Http.expectJson ReceivePasses passResultsDecoder
     }
 
