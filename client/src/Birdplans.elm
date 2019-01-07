@@ -272,12 +272,9 @@ prepareBirdResults b tz =
     })
     b.passes
 
-prepareResults : PassResults -> List PreparedResult
-prepareResults p =
-  let
-      tz = Time.customZone 0 p.timezone.exceptions
-  in
-      List.concat (List.map (\b -> (prepareBirdResults b tz)) p.bird_passes)
+prepareResults : Time.Zone -> List BirdPass -> List PreparedResult
+prepareResults tz bs =
+  List.concat (List.map (\b -> (prepareBirdResults b tz)) bs)
 
 formatMSDuration : Int -> String
 formatMSDuration t =
@@ -353,14 +350,14 @@ csvHeader : String
 csvHeader =
   String.join ","
     (List.map quote
-      [ "Bird"
-      , "Grid"
+      [ "Grid"
       , "Latitude"
       , "Longitude"
+      , "Local Timezone"
+      , "Bird"
       , "UTC AOS Timestamp"
       , "UTC TCA Timestamp"
       , "UTC LOS Timestamp"
-      , "Local Timezone"
       , "Local AOS"
       , "Local TCA"
       , "Local LOS"
@@ -382,46 +379,48 @@ quote s =
       _ -> [new] ++ acc
   ) [] (List.reverse (String.toList s))) ++ "\""
 
-csvFormatResult : State -> PreparedResult -> String
-csvFormatResult s p =
+csvFormatResult : Time.Zone -> PreparedResult -> (List String)
+csvFormatResult tz p =
   let
       aos = Time.millisToPosix p.time.aos
       tca = Time.millisToPosix p.time.tca
       los = Time.millisToPosix p.time.los
   in
-      String.join ","
-        (List.map quote
-          [ p.bird
-          , s.grid
-          , s.lattxt
-          , s.lngtxt
-          , String.fromInt p.time.aos
-          , String.fromInt p.time.tca
-          , String.fromInt p.time.los
-          , s.timezonename
-          , (dateFormatted s.timezone aos) ++ " " ++ (timeFormatted s.timezone aos)
-          , (dateFormatted s.timezone tca) ++ " " ++ (timeFormatted s.timezone tca)
-          , (dateFormatted s.timezone los) ++ " " ++ (timeFormatted s.timezone los)
-          , String.fromInt (round p.el)
-          , (dateFormatted Time.utc aos) ++ " " ++ (timeFormatted Time.utc aos)
-          , (dateFormatted Time.utc tca) ++ " " ++ (timeFormatted Time.utc tca)
-          , (dateFormatted Time.utc los) ++ " " ++ (timeFormatted Time.utc los)
-          , formatMSDuration p.dur
-          , String.fromInt p.az.aos
-          , String.fromInt p.az.tca
-          , String.fromInt p.az.los
-          ])
+      List.map quote
+        [ p.bird
+        , String.fromInt p.time.aos
+        , String.fromInt p.time.tca
+        , String.fromInt p.time.los
+        , (dateFormatted tz aos) ++ " " ++ (timeFormatted tz aos)
+        , (dateFormatted tz tca) ++ " " ++ (timeFormatted tz tca)
+        , (dateFormatted tz los) ++ " " ++ (timeFormatted tz los)
+        , String.fromInt (round p.el)
+        , (dateFormatted Time.utc aos) ++ " " ++ (timeFormatted Time.utc aos)
+        , (dateFormatted Time.utc tca) ++ " " ++ (timeFormatted Time.utc tca)
+        , (dateFormatted Time.utc los) ++ " " ++ (timeFormatted Time.utc los)
+        , formatMSDuration p.dur
+        , String.fromInt p.az.aos
+        , String.fromInt p.az.tca
+        , String.fromInt p.az.los
+        ]
 
-generateCsvDataUri : State -> List PreparedResult -> String
-generateCsvDataUri state ps =
+generateCsvDataUri : State -> Time.Zone -> List PreparedResult -> String
+generateCsvDataUri s tz ps =
   "data:text/csv;charset=UTF-8;base64,"
     ++ (case (Base64.fromBytes (
       Bytes.Encode.encode (
         Bytes.Encode.string (
-          (csvHeader ++ "\n" ++ (String.join "\n" (List.map (\p -> (csvFormatResult state p)) ps)))
+          csvHeader ++ "\n" ++ (
+            String.join "\n" (
+              List.map (\p ->
+                  (String.join "," ((List.map quote [s.grid, s.lattxt, s.lngtxt, s.timezonename]) ++ (csvFormatResult tz p)))
+                ) ps
+              )
+            )
+          )
         )
       )
-    )) of
+    ) of
       Just b -> b
       Nothing -> "error encoding csv"
       )
@@ -429,11 +428,12 @@ generateCsvDataUri state ps =
 renderPassResults : State -> PassResults -> Html Msg
 renderPassResults state p =
   let
-      sorted = (List.sortBy (\c -> c.time.aos) (prepareResults p))
+      tz = Time.customZone 0 p.timezone.exceptions
+      sorted = (List.sortBy (\c -> c.time.aos) (prepareResults tz p.bird_passes))
   in
       div []
         [ a
-          [ Attr.href (generateCsvDataUri state sorted)
+          [ Attr.href (generateCsvDataUri state tz sorted)
           , Attr.download "birdplans.csv"
           ] [ text "Download CSV" ]
         , table []
@@ -458,7 +458,7 @@ renderPassResults state p =
               , th [] [text "LOS"]
               ]
             ]
-            , tableBody state.timezone sorted
+            , tableBody tz sorted
           ]
         ]
 
@@ -723,8 +723,7 @@ update msg state =
             in
                 ({state | pass_results = Just pass_results}, Cmd.none)
 
-    SetTimeZone zone ->
-      ({ state | timezone = zone}, Task.perform SetTimeZoneName Time.getZoneName)
+    SetTimeZone zone -> ({ state | timezone = zone}, Task.perform SetTimeZoneName Time.getZoneName)
 
     SetTimeZoneName zonename ->
       ({ state | timezonename =
