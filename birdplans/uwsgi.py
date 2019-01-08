@@ -14,6 +14,7 @@ import sys
 
 from datetime import datetime, timedelta, timezone
 from collections import namedtuple
+from timeit import default_timer
 from urllib import parse
 from enum import Enum
 
@@ -183,6 +184,8 @@ class BirdplansUwsgi:
         '''Passes over a single location.
         '''
 
+        t0 = default_timer()
+
         keys = parse.parse_qs(env['QUERY_STRING'])
 
         lat = float(keys['lat'][0])
@@ -257,6 +260,7 @@ class BirdplansUwsgi:
                         'name': str(tz),
                         'changes': tzhelper.make_tzinfo(tz, window_start, window_stop)
                     },
+                    'time': default_timer() - t0,
                     'data': results
                 }
             )

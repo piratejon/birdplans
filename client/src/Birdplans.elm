@@ -107,9 +107,16 @@ type alias State =
   , timezone : Time.Zone
   , timezonename : String
   , timezones : List String
-  , pass_results : Maybe PassResults
-  , err : Maybe Http.Error
+  -- , pass_results : Maybe PassResults
+  -- , err : Maybe Http.Error
+  , status : LoadingStatus
   }
+
+type LoadingStatus
+  = New
+  | Loading
+  | Failed Http.Error
+  | Loaded PassResults
 
 type alias CustomTimeZone =
   { name : String
@@ -128,6 +135,7 @@ type alias CustomTimeZoneException =
 
 type alias PassResults =
   { timezone : CustomTimeZone
+  , response_time : Float
   , bird_passes : List BirdPass
   }
 
@@ -196,14 +204,14 @@ initialState =
       , min_alt = min_alt
       , min_alt_txt = String.fromInt min_alt
       , birds = []
-      , query_string = "query_string"
+      , query_string = ""
       , datetime = "2018-12-05T13:45"
       , datetime_valid = True
       , timezone = Time.utc
       , timezonename = "UTC"
       , timezones = []
-      , pass_results = Nothing
-      , err = Nothing
+      -- , pass_results = Nothing
+      , status = New
       }
 
 httpError : Http.Error -> String
@@ -237,21 +245,19 @@ view state =
         , viewChecks "Birds" state.birds UpdateBirds
         ]
         , input [ Attr.type_ "button", Attr.value "Search", onClick Search ] []
-        , span [] [ text state.query_string ]
-        , div [ Attr.class (case state.err of
-          Nothing -> "ok"
-          Just _ -> "err"
-          ) ]
-          [ text (case state.err of
-            Nothing -> ""
-            Just e -> httpError e)
-          ]
-        , div [ Attr.class "results" ]
-            (case state.pass_results of
-            Just p -> [renderPassResults state p]
-            Nothing -> [])
+        , (
+          case state.status of
+            New -> div [Attr.class "new"] [text "Welcome!"]
+            Loading -> span [Attr.class "lds-ellipsis"] [ div [] [], div [] [], div [] [], div [] [] ]
+            Loaded pass_results -> div [Attr.class "loaded"]
+              [ span [] [text ("Loaded in " ++ (String.fromFloat pass_results.response_time) ++ " seconds")]
+              , div [ Attr.class "results" ] [renderPassResults state pass_results]
+              ]
+            Failed e -> div [Attr.class "failed"] [text (httpError e)]
+        )
       ]
     , Html.node "link" [ Attr.rel "stylesheet", Attr.href "birdplans.css" ] []
+    , Html.node "link" [ Attr.rel "stylesheet", Attr.href "loading.css" ] []
   ]
 
 tableHeader : List {h:String, s:List String} -> List (Html Msg)
@@ -635,7 +641,7 @@ update msg state =
 
     Search ->
       let query_string = buildQueryString state in
-      ({state | query_string = query_string}, queryPasses {state | query_string = query_string})
+      ({state | query_string = query_string, status = Loading}, queryPasses {state | query_string = query_string})
 
     UpdateGridRef _ -> (state, Cmd.none)
 
@@ -717,11 +723,11 @@ update msg state =
 
     ReceivePasses result ->
       case result of
-        Err what -> ({state | pass_results = Nothing, err = Just what}, Cmd.none)
+        Err what -> ({state | status = Failed what}, Cmd.none)
         Ok pass_results -> -- let _ = Debug.log "receivepasses" passes
             let _ = Debug.log "receivepasses" pass_results
             in
-                ({state | pass_results = Just pass_results}, Cmd.none)
+                ({state | status = Loaded pass_results}, Cmd.none)
 
     SetTimeZone zone -> ({ state | timezone = zone}, Task.perform SetTimeZoneName Time.getZoneName)
 
@@ -843,8 +849,9 @@ birdPassDecoder =
 
 passResultsDecoder : JsonD.Decoder PassResults
 passResultsDecoder =
-  JsonD.map2 PassResults
+  JsonD.map3 PassResults
     (JsonD.at ["tz"] customTimeZoneDecoder)
+    (JsonD.at ["time"] JsonD.float)
     (JsonD.at ["data"] (JsonD.list birdPassDecoder))
 
 targetSelectedValue : JsonD.Decoder String
