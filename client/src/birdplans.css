@@ -41,3 +41,7 @@ table td:last-child { border-right: none; }
 tr.local-date-first-row { border-top: 1px solid black; }
 td.utc-date-first-row { border-top: 1px solid black; }
 td.bird-first-row { border-top: 1px solid black; }
+
+.search > div {
+  display: inline-block;
+}

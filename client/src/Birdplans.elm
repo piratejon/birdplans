@@ -244,21 +244,42 @@ view state =
         , viewInput "Minimum Degrees Altitude" "text" initialState.min_alt_txt state.min_alt_txt (if state.min_alt_valid then "valid" else "invalid") UpdateAlt
         , viewChecks "Birds" state.birds UpdateBirds
         ]
-        , input [ Attr.type_ "button", Attr.value "Search", onClick Search ] []
+        , div [Attr.class "search"]
+          [ div []
+            [ input
+              [ Attr.type_ "button"
+              , Attr.value "Search"
+              , Attr.disabled (state.status == Loading)
+              , onClick Search
+              ] []
+            ]
+            , div [Attr.class "status"]
+              [
+                case state.status of
+                  New -> div [Attr.class "new"] [text "Welcome!"]
+                  Loading -> ellipsis
+                  Failed e -> div [Attr.class "failed"] [text (httpError e)]
+                  Loaded pass_results -> div [Attr.class "loaded"] []
+              ]
+          ]
         , (
           case state.status of
-            New -> div [Attr.class "new"] [text "Welcome!"]
-            Loading -> span [Attr.class "lds-ellipsis"] [ div [] [], div [] [], div [] [], div [] [] ]
             Loaded pass_results -> div [Attr.class "loaded"]
-              [ span [] [text ("Loaded in " ++ (String.fromFloat pass_results.response_time) ++ " seconds")]
+              [ span [] [text ("Loaded in " ++ (roundFloat pass_results.response_time 2) ++ " seconds")]
               , div [ Attr.class "results" ] [renderPassResults state pass_results]
               ]
-            Failed e -> div [Attr.class "failed"] [text (httpError e)]
+            _ -> span [] []
         )
       ]
     , Html.node "link" [ Attr.rel "stylesheet", Attr.href "birdplans.css" ] []
     , Html.node "link" [ Attr.rel "stylesheet", Attr.href "loading.css" ] []
   ]
+
+ellipsis = span [Attr.class "lds-ellipsis"] [ div [] [], div [] [], div [] [], div [] [] ]
+
+roundFloat : Float -> Int -> String
+roundFloat f d =
+  String.fromFloat ((toFloat (round (f * (toFloat (10 ^ d))))) / (toFloat (10 ^ d)))
 
 tableHeader : List {h:String, s:List String} -> List (Html Msg)
 tableHeader headers =
