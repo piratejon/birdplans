@@ -37,14 +37,10 @@ import Base64
 
 birdsUrl = "/birds"
 zonesUrl = "/tz"
-oneUrl = "/one.json"
 
 type Msg
   = Search
-  | UpdateGrid String
-  | UpdateGridRef String
-  | UpdateLat String
-  | UpdateLng String
+  | UpdateLocation Locator
   | UpdateAlt String
   | UpdateTimeZone String
   | UpdateDateTime String
@@ -64,14 +60,18 @@ main =
   , view = view
   }
 
-type LocatorSelectorType
-  = GridCenter
-  | GridNW
-  | GridNE
-  | GridSW
-  | GridSE
-  | LatLng
+type Grid
+  = NorthWest String
+  | NorthEast String
+  | SouthWest String
+  | SouthEast String
+  | Center String
 
+type Locator
+  = Grid
+  | LatLng (Float, Float)
+
+{-
 toString : LocatorSelectorType -> String
 toString locator =
   case locator of
@@ -81,35 +81,27 @@ toString locator =
     GridSW -> "GridSW"
     GridSE -> "GridSE"
     LatLng -> "LatLng"
+-}
 
 type alias Bird =
   { name : String
   , selected : Bool
   }
 
-type alias State =
-  { locator_selector : LocatorSelectorType
-  , lat : Float
-  , lng : Float
-  , lattxt : String
-  , lngtxt : String
-  , grid : String
-  , grid_valid : Bool
-  , lat_valid : Bool
-  , lng_valid : Bool
-  , min_alt : Int
-  , min_alt_txt : String
-  , min_alt_valid : Bool
+type alias Model =
+  { locator : Locator
+  , min_alt : Float
   , birds : List Bird
   , query_string : String
-  , datetime : String
-  , datetime_valid : Bool
+  , datetime : 
   , timezone : Time.Zone
   , timezonename : String
   , timezones : List String
-  -- , pass_results : Maybe PassResults
-  -- , err : Maybe Http.Error
   , status : LoadingStatus
+  }
+
+type alias View =
+  {
   }
 
 type LoadingStatus
@@ -191,7 +183,7 @@ initialState =
       lng = second latlng
       min_alt = 12
   in 
-      { locator_selector = GridSW
+      { locator_selector = GridSW grid
       , lat = lat
       , lng = lng
       , lattxt = String.fromFloat lat
@@ -230,13 +222,6 @@ view state =
     , div []
       [ section [ Attr.id "locators" ]
         [ viewInput "Grid" "text" initialState.grid state.grid (if state.grid_valid then "valid" else "invalid") UpdateGrid
-        {-
-        , radioInput "Center" "gridref" "GridCenter" state.locator_selector UpdateGridRef
-        , radioInput "NW" "gridref" "GridNW" state.locator_selector UpdateGridRef
-        , radioInput "NE" "gridref" "GridNE" state.locator_selector UpdateGridRef
-        , radioInput "SW" "gridref" "GridSW" state.locator_selector UpdateGridRef
-        , radioInput "SE" "gridref" "GridSE" state.locator_selector UpdateGridRef
-        -}
         , viewInput "Latitude" "text" initialState.lattxt state.lattxt (if state.lat_valid then "valid" else "invalid") UpdateLat
         , viewInput "Longitude" "text"  initialState.lngtxt state.lngtxt (if state.lng_valid then "valid" else "invalid") UpdateLng
         , viewInput "Start of 7-day window to search" "datetime-local" initialState.datetime state.datetime (if state.datetime_valid then "valid" else "invalid") UpdateDateTime
@@ -538,6 +523,7 @@ viewInput label_ type_ placeholder_ value_ class toMsg =
       []
     ]
 
+{-
 radioInput : String -> String -> String -> LocatorSelectorType -> String -> (String -> Msg) -> Html Msg
 radioInput label_ name value selected class toMsg =
   label []
@@ -551,6 +537,7 @@ radioInput label_ name value selected class toMsg =
       , onInput toMsg ]
       []
     ]
+-}
 
 addFloatTuple : (Float, Float) -> (Float, Float) -> (Float, Float)
 addFloatTuple (a, b) (c, d) =
@@ -664,7 +651,10 @@ update msg state =
       let query_string = buildQueryString state in
       ({state | query_string = query_string, status = Loading}, queryPasses {state | query_string = query_string})
 
-    UpdateGridRef _ -> (state, Cmd.none)
+    UpdateLocation locator ->
+      case locator of
+        Grid gl ->
+        LatLng 
 
     UpdateLat newlat ->
       case (String.toFloat newlat) of
