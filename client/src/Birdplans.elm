@@ -39,8 +39,11 @@ birdsUrl = "/birds"
 zonesUrl = "/tz"
 oneUrl = "/one.json"
 
+queryTracker = "birdplans_query"
+
 type Msg
   = Search
+  | Cancel
   | UpdateGrid String
   | UpdateGridRef String
   | UpdateLat String
@@ -115,6 +118,7 @@ type alias State =
 type LoadingStatus
   = New
   | Loading
+  | Cancelled
   | Failed Http.Error
   | Loaded PassResults
 
@@ -252,12 +256,19 @@ view state =
               , Attr.disabled (state.status == Loading)
               , onClick Search
               ] []
+              , input
+              [ Attr.type_ "button"
+              , Attr.value "Cancel"
+              , Attr.disabled (state.status /= Loading)
+              , onClick Cancel
+              ] []
             ]
             , div [Attr.class "status"]
               [
                 case state.status of
                   New -> div [Attr.class "new"] [text "Welcome!"]
                   Loading -> ellipsis
+                  Cancelled -> div [Attr.class "cancelled"] [text "Cancelled"]
                   Failed e -> div [Attr.class "failed"] [text (httpError e)]
                   Loaded pass_results -> div [Attr.class "loaded"] []
               ]
@@ -664,6 +675,9 @@ update msg state =
       let query_string = buildQueryString state in
       ({state | query_string = query_string, status = Loading}, queryPasses {state | query_string = query_string})
 
+    Cancel ->
+      ({state | status = Cancelled}, Http.cancel queryTracker)
+
     UpdateGridRef _ -> (state, Cmd.none)
 
     UpdateLat newlat ->
@@ -813,9 +827,14 @@ validateDateTime s = True -- TODO
 
 getAvailableBirds : String -> Cmd Msg
 getAvailableBirds file =
-  Http.get
-    { url = (UrlB.relative [ file ] [])
+  Http.request
+    { body = Http.emptyBody
     , expect = Http.expectJson ReceiveBirds (JsonD.list JsonD.string)
+    , headers = []
+    , method = "GET"
+    , timeout = Nothing
+    , tracker = Just queryTracker
+    , url = (UrlB.relative [ file ] [])
     }
 
 getAvailableTimeZones : String -> Cmd Msg
