@@ -16,6 +16,7 @@ from datetime import datetime, timedelta, timezone
 from collections import namedtuple
 from timeit import default_timer
 from urllib import parse
+from http import cookies
 from enum import Enum
 
 import pytz
@@ -188,6 +189,7 @@ class BirdplansUwsgi:
 
         keys = parse.parse_qs(env['QUERY_STRING'])
 
+        # TODO send failures back to client in a meaningful way!
         lat = float(keys['lat'][0])
         lng = float(keys['lng'][0])
         tz = pytz.timezone(keys['tz'][0])
@@ -268,8 +270,14 @@ class BirdplansUwsgi:
         )
 
     def default_handler(self, env, start_response):
-        '''Default handler, returns the main application.
+        '''Default handler, if we have enough cookies to do a search, then do
+        that, otherwise return the main application.
         '''
+
+        try:
+            request_cookies = cookies.SimpleCookie(env['HTTP_COOKIE'])
+        except:
+            pass
 
         with open('static/index.html', 'r') as fin:
             start_response('200 OK', [('Content-Type', 'text/html; charset=' + self.encoding)])
