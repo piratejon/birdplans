@@ -61,7 +61,11 @@
     },
     "LilacSat2": {
       "source": "celestrak/active.txt",
-      "name": "LILACSAT 2"
+      "name": "LILACSAT-2"
+    },
+    "ISS": {
+      "source": "celestrak/active.txt",
+      "name": "ISS (ZARYA)"
     },
     "AO-85": {
       "source": "nasa/nasa.all",
