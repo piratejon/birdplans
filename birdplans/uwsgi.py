@@ -181,25 +181,16 @@ class BirdplansUwsgi:
         start_response('200 OK', [('Content-Type', 'text/json; charset={}'.format(self.encoding))])
         yield bytes(json.dumps(pytz.all_timezones), self.encoding)
 
-    def handler_one(self, env, start_response):
-        '''Passes over a single location.
+    def passes_to_json(self, loc, tz, window, alt, birds):
+        '''Call pass_estimation_wrapper for each bird in birds and JSON the results.
         '''
 
         t0 = default_timer()
 
-        keys = parse.parse_qs(env['QUERY_STRING'])
+        lat, lng = loc
+        window_start, window_stop = window
 
-        # TODO send failures back to client in a meaningful way!
-        lat = float(keys['lat'][0])
-        lng = float(keys['lng'][0])
-        tz = pytz.timezone(keys['tz'][0])
-        window_start = tz.localize(datetime.strptime(keys['window_start'][0], "%Y-%m-%dT%H:%M"))
-        window_stop = window_start + timedelta(days=5)
-        alt = int(keys.get('alt', [12])[0])
-        birds = keys['bird']
-
-        start_response('200 OK', [('Content-Type', 'text/json; charset={}'.format(self.encoding))])
-
+        # TODO less sponge
         results = []
 
         # TODO separate function for this
@@ -221,7 +212,7 @@ class BirdplansUwsgi:
                 'lng': lng,
                 'bird': bird,
                 'passes': [
-                    {
+                    { # TODO document these gnarly comprehensions or at least the intended output
                         **{
                             k: {
                                 't': int(getattr(pass_, k).utc_datetime().timestamp() * 1000),
@@ -255,19 +246,34 @@ class BirdplansUwsgi:
                 ]
             })
 
-        yield bytes(
-            json.dumps(
-                {
-                    'tz': {
-                        'name': str(tz),
-                        'changes': tzhelper.make_tzinfo(tz, window_start, window_stop)
-                    },
-                    'time': default_timer() - t0,
-                    'data': results
-                }
-            )
-            , self.encoding
-        )
+        return {
+            'tz': {
+                'name': str(tz),
+                'changes': tzhelper.make_tzinfo(tz, window_start, window_stop)
+            },
+            'time': default_timer() - t0,
+            'data': results
+        }
+
+    def handler_one(self, env, start_response):
+        '''Passes over a single location.
+        '''
+
+        keys = parse.parse_qs(env['QUERY_STRING'])
+
+        # TODO send failures back to client in a meaningful way!
+        lat = float(keys['lat'][0])
+        lng = float(keys['lng'][0])
+        tz = pytz.timezone(keys['tz'][0])
+        window_start = tz.localize(datetime.strptime(keys['window_start'][0], "%Y-%m-%dT%H:%M"))
+        window_stop = window_start + timedelta(days=5)
+        alt = int(keys.get('alt', [12])[0])
+        birds = keys['bird']
+
+        results = self.passes_to_json((lat, lng), tz, (window_start, window_stop), alt, birds)
+
+        start_response('200 OK', [('Content-Type', 'text/json; charset={}'.format(self.encoding))])
+        yield bytes(json.dumps(results), self.encoding)
 
     def default_handler(self, env, start_response):
         '''Default handler, if we have enough cookies to do a search, then do
@@ -276,6 +282,15 @@ class BirdplansUwsgi:
 
         try:
             request_cookies = cookies.SimpleCookie(env['HTTP_COOKIE'])
+
+            lat = request_cookies['lat'].value
+            lng = request_cookies['lng'].value
+            tz = request_cookies['tz'].value
+            alt = request_cookies['alt'].value
+            birds = request_cookies['birds'].value
+
+            # results = self.passes_to_json((lat, lng), tz, (window_start, window_stop), alt, birds)
+
         except:
             pass
 
