@@ -16,7 +16,6 @@ from datetime import datetime, timedelta, timezone
 from collections import namedtuple
 from timeit import default_timer
 from urllib import parse
-from http import cookies
 from enum import Enum
 
 import pytz
@@ -80,6 +79,65 @@ Parameters = namedtuple(
     'Parameters'
     , ['valid', 'grid', 'where', 'tz', 'start_time', 'end_time', 'birds', 'response']
 )
+def params_from_query(query, default):
+    '''Turn a query string dict into parameters suitable for calling the prediction function.
+
+    :param query: dict representing parsed query string with list values
+    :param default: dict of parameter default values
+    '''
+
+    try:
+        response = ApiResponse(Severity[query['loglevel'][0]])
+    except KeyError: # query[x] or Severity[x] could trigger KeyError
+        response = ApiResponse(default['loglevel'])
+
+    try:
+        grid = query['grid'][0]
+    except KeyError:
+        response.message(Severity.ERROR, 'mandatory parameter grid not found')
+        return Parameters(valid=False, response=response)
+
+    try:
+        where = Topos(*mh.toLoc(grid))
+    except (ValueError, AssertionError):
+        response.message(Severity.ERROR, 'unable to decode grid {}', grid)
+        return Parameters(valid=False, response=response)
+
+    minimum_altitude = int(query.get('minimum_altitude', [default['minimum_altitude']])[0])
+
+    tzname = query.get('tzname', [default['tzname']])[0]
+    try:
+        tz = pytz.timezone(tzname)
+    except pytz.UnknownTimeZoneError:
+        tz = default['tz']
+        response.message(Severity.WARN, 'invalid tz {}, using default {}', tzname, tz)
+
+    try:
+        start_time = tz.localize(datetime.strptime(query['start_time'], '%Y-%m-%d %H:%M'))
+    except (KeyError, ValueError):
+        start_time = default['start_time']
+        response.message(Severity.INFO, 'using default start_time {}', start_time)
+
+    try:
+        end_time = tz.localize(datetime.strptime(query['end_time'], '%Y-%m-%d %H:%M'))
+    except (KeyError, ValueError):
+        end_time = default['end_time']
+        response.message(Severity.INFO, 'using default end_time {}', end_time)
+
+    if start_time > end_time:
+        response.message(Severity.INFO, 'swapping start_time and end_time')
+        start_time, end_time = end_time, start_time
+
+    try:
+        birds = query['birds']
+    except KeyError:
+        response.message(Severity.ERROR, 'must select one or more birds to plan for')
+        return Parameters(valid=False, response=response)
+
+    return Parameters(
+        True, grid, where, minimum_altitude, tz, start_time, end_time, birds, response
+    )
+
 class BirdplansUwsgi:
     '''Birdplans uwsgi application
     '''
@@ -122,37 +180,24 @@ class BirdplansUwsgi:
         start_response('200 OK', [('Content-Type', 'text/json; charset={}'.format(self.encoding))])
         yield bytes(json.dumps(pytz.all_timezones), self.encoding)
 
-    def passes_to_json(self, loc, tz, window, alt, birds):
-        '''Call pass_estimation_wrapper for each bird in birds and JSON the results.
-
-        :param loc: Grid to decode
-        :type grid: (float, float)
-
-        :param tz: output time zone
-        :type tz: tzinfo
-
-        :param window: time span to estimate passes in, given in UTC
-        :type window: (datetime, datetime)
-
-        :param alt: minimum altitude for passes
-        :type alt: float
-
-        :param birds: list of birds to estimate passes for
-        :type birds: [string]
-
-        :return: response dictionary including client TZ data and estimated UTC passes
-        :rtype: dict
-
-        ###:raises ValueError: Grid locator contains a character where a digit is expected.
-        ###:raises AssertionError: Grid locator character length is not 2, 4, 6, or 8
+    def handler_one(self, env, start_response):
+        '''Passes over a single location.
         '''
 
         t0 = default_timer()
 
-        lat, lng = loc
-        window_start, window_stop = window
+        keys = parse.parse_qs(env['QUERY_STRING'])
 
-        # TODO less sponge
+        lat = float(keys['lat'][0])
+        lng = float(keys['lng'][0])
+        tz = pytz.timezone(keys['tz'][0])
+        window_start = tz.localize(datetime.strptime(keys['window_start'][0], "%Y-%m-%dT%H:%M"))
+        window_stop = window_start + timedelta(days=5)
+        alt = int(keys.get('alt', [12])[0])
+        birds = keys['bird']
+
+        start_response('200 OK', [('Content-Type', 'text/json; charset={}'.format(self.encoding))])
+
         results = []
 
         # TODO separate function for this
@@ -174,7 +219,7 @@ class BirdplansUwsgi:
                 'lng': lng,
                 'bird': bird,
                 'passes': [
-                    { # TODO document these gnarly comprehensions or at least the intended output
+                    {
                         **{
                             k: {
                                 't': int(getattr(pass_, k).utc_datetime().timestamp() * 1000),
@@ -208,74 +253,27 @@ class BirdplansUwsgi:
                 ]
             })
 
-        return {
-            'tz': {
-                'name': str(tz),
-                'changes': tzhelper.make_tzinfo(tz, window_start, window_stop)
-            },
-            'time': default_timer() - t0,
-            'data': results
-        }
-
-    def handler_one(self, env, start_response):
-        '''Passes over a single location.
-        '''
-
-        keys = parse.parse_qs(env['QUERY_STRING'])
-
-        # TODO send failures back to client in a meaningful way!
-        lat = float(keys['lat'][0])
-        lng = float(keys['lng'][0])
-        tz = pytz.timezone(keys['tz'][0])
-        window_start = tz.localize(datetime.strptime(keys['window_start'][0], "%Y-%m-%dT%H:%M"))
-        window_stop = window_start + timedelta(days=5)
-        alt = int(keys.get('alt', [12])[0])
-        birds = keys['bird']
-
-        results = self.passes_to_json((lat, lng), tz, (window_start, window_stop), alt, birds)
-
-        response_cookies = cookies.SimpleCookie()
-        response_cookies['lat'] = lat
-        response_cookies['lng'] = lng
-        response_cookies['tz'] = str(tz)
-        response_cookies['alt'] = alt
-        response_cookies['birds'] = birds
-
-        start_response('200 OK', [
-            ('Content-Type', 'text/json; charset={}'.format(self.encoding))
-        ] + [('Set-Cookie', _.OutputString()) for _ in response_cookies.values()]
+        yield bytes(
+            json.dumps(
+                {
+                    'tz': {
+                        'name': str(tz),
+                        'changes': tzhelper.make_tzinfo(tz, window_start, window_stop)
+                    },
+                    'time': default_timer() - t0,
+                    'data': results
+                }
+            )
+            , self.encoding
         )
-        yield bytes(json.dumps(results), self.encoding)
 
     def default_handler(self, env, start_response):
-        '''Default handler, if we have enough cookies to do a search, then do
-        that, otherwise return the main application.
+        '''Default handler, returns the main application.
         '''
 
-        try:
-            request_cookies = cookies.SimpleCookie(env['HTTP_COOKIE'])
-
-            lat = float(request_cookies['lat'].value)
-            lng = float(request_cookies['lng'].value)
-            tz = pytz.timezone(request_cookies['tz'].value)
-            alt = int(request_cookies['alt'].value)
-            birds = request_cookies['birds'].value
-
-            window_start = datetime.now(tz)
-            window_stop = window_start + timedelta(days=5)
-
-            results = self.passes_to_json((lat, lng), tz, (window_start, window_stop), alt, birds)
-
-        except: # TODO note exceptions?
-            with open('static/index.html', 'r') as fin:
-                start_response('200 OK', [('Content-Type', 'text/html; charset=' + self.encoding)])
-                yield bytes(fin.read(), self.encoding) # TODO less sponge plz
-
-        else: # i guess we have results
-            start_response('200 OK', [
-                ('Content-Type', 'text/json; charset={}'.format(self.encoding))
-            ])
-            yield bytes(json.dumps(results), self.encoding)
+        with open('static/index.html', 'r') as fin:
+            start_response('200 OK', [('Content-Type', 'text/html; charset=' + self.encoding)])
+            yield bytes(fin.read(), self.encoding) # TODO less sponge plz
 
     @staticmethod
     def decode_grid(grid):
