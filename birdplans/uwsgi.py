@@ -80,65 +80,6 @@ Parameters = namedtuple(
     'Parameters'
     , ['valid', 'grid', 'where', 'tz', 'start_time', 'end_time', 'birds', 'response']
 )
-def params_from_query(query, default):
-    '''Turn a query string dict into parameters suitable for calling the prediction function.
-
-    :param query: dict representing parsed query string with list values
-    :param default: dict of parameter default values
-    '''
-
-    try:
-        response = ApiResponse(Severity[query['loglevel'][0]])
-    except KeyError: # query[x] or Severity[x] could trigger KeyError
-        response = ApiResponse(default['loglevel'])
-
-    try:
-        grid = query['grid'][0]
-    except KeyError:
-        response.message(Severity.ERROR, 'mandatory parameter grid not found')
-        return Parameters(valid=False, response=response)
-
-    try:
-        where = Topos(*mh.toLoc(grid))
-    except (ValueError, AssertionError):
-        response.message(Severity.ERROR, 'unable to decode grid {}', grid)
-        return Parameters(valid=False, response=response)
-
-    minimum_altitude = int(query.get('minimum_altitude', [default['minimum_altitude']])[0])
-
-    tzname = query.get('tzname', [default['tzname']])[0]
-    try:
-        tz = pytz.timezone(tzname)
-    except pytz.UnknownTimeZoneError:
-        tz = default['tz']
-        response.message(Severity.WARN, 'invalid tz {}, using default {}', tzname, tz)
-
-    try:
-        start_time = tz.localize(datetime.strptime(query['start_time'], '%Y-%m-%d %H:%M'))
-    except (KeyError, ValueError):
-        start_time = default['start_time']
-        response.message(Severity.INFO, 'using default start_time {}', start_time)
-
-    try:
-        end_time = tz.localize(datetime.strptime(query['end_time'], '%Y-%m-%d %H:%M'))
-    except (KeyError, ValueError):
-        end_time = default['end_time']
-        response.message(Severity.INFO, 'using default end_time {}', end_time)
-
-    if start_time > end_time:
-        response.message(Severity.INFO, 'swapping start_time and end_time')
-        start_time, end_time = end_time, start_time
-
-    try:
-        birds = query['birds']
-    except KeyError:
-        response.message(Severity.ERROR, 'must select one or more birds to plan for')
-        return Parameters(valid=False, response=response)
-
-    return Parameters(
-        True, grid, where, minimum_altitude, tz, start_time, end_time, birds, response
-    )
-
 class BirdplansUwsgi:
     '''Birdplans uwsgi application
     '''
@@ -183,6 +124,27 @@ class BirdplansUwsgi:
 
     def passes_to_json(self, loc, tz, window, alt, birds):
         '''Call pass_estimation_wrapper for each bird in birds and JSON the results.
+
+        :param loc: Grid to decode
+        :type grid: (float, float)
+
+        :param tz: output time zone
+        :type tz: tzinfo
+
+        :param window: time span to estimate passes in, given in UTC
+        :type window: (datetime, datetime)
+
+        :param alt: minimum altitude for passes
+        :type alt: float
+
+        :param birds: list of birds to estimate passes for
+        :type birds: [string]
+
+        :return: response dictionary including client TZ data and estimated UTC passes
+        :rtype: dict
+
+        ###:raises ValueError: Grid locator contains a character where a digit is expected.
+        ###:raises AssertionError: Grid locator character length is not 2, 4, 6, or 8
         '''
 
         t0 = default_timer()
@@ -272,7 +234,17 @@ class BirdplansUwsgi:
 
         results = self.passes_to_json((lat, lng), tz, (window_start, window_stop), alt, birds)
 
-        start_response('200 OK', [('Content-Type', 'text/json; charset={}'.format(self.encoding))])
+        response_cookies = cookies.SimpleCookie()
+        response_cookies['lat'] = lat
+        response_cookies['lng'] = lng
+        response_cookies['tz'] = str(tz)
+        response_cookies['alt'] = alt
+        response_cookies['birds'] = birds
+
+        start_response('200 OK', [
+            ('Content-Type', 'text/json; charset={}'.format(self.encoding))
+        ] + [('Set-Cookie', _.OutputString()) for _ in response_cookies.values()]
+        )
         yield bytes(json.dumps(results), self.encoding)
 
     def default_handler(self, env, start_response):
@@ -283,20 +255,27 @@ class BirdplansUwsgi:
         try:
             request_cookies = cookies.SimpleCookie(env['HTTP_COOKIE'])
 
-            lat = request_cookies['lat'].value
-            lng = request_cookies['lng'].value
-            tz = request_cookies['tz'].value
-            alt = request_cookies['alt'].value
+            lat = float(request_cookies['lat'].value)
+            lng = float(request_cookies['lng'].value)
+            tz = pytz.timezone(request_cookies['tz'].value)
+            alt = int(request_cookies['alt'].value)
             birds = request_cookies['birds'].value
 
-            # results = self.passes_to_json((lat, lng), tz, (window_start, window_stop), alt, birds)
+            window_start = datetime.now(tz)
+            window_stop = window_start + timedelta(days=5)
 
-        except:
-            pass
+            results = self.passes_to_json((lat, lng), tz, (window_start, window_stop), alt, birds)
 
-        with open('static/index.html', 'r') as fin:
-            start_response('200 OK', [('Content-Type', 'text/html; charset=' + self.encoding)])
-            yield bytes(fin.read(), self.encoding) # TODO less sponge plz
+        except: # TODO note exceptions?
+            with open('static/index.html', 'r') as fin:
+                start_response('200 OK', [('Content-Type', 'text/html; charset=' + self.encoding)])
+                yield bytes(fin.read(), self.encoding) # TODO less sponge plz
+
+        else: # i guess we have results
+            start_response('200 OK', [
+                ('Content-Type', 'text/json; charset={}'.format(self.encoding))
+            ])
+            yield bytes(json.dumps(results), self.encoding)
 
     @staticmethod
     def decode_grid(grid):
