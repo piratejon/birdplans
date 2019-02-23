@@ -6,7 +6,7 @@ jonathanwesleystone+KI5BEX@gmail.com
 Web 2.0 Birdplans client
 -}
 
-module Birdplans exposing (main)
+port module Birdplans exposing (main)
 
 import Browser
 import List
@@ -62,9 +62,30 @@ type Msg
 main =
   Browser.element
   { init = init
-  , update = update
+  , update = updateWithStorage
   , subscriptions = subscriptions
   , view = view
+  }
+
+updateWithStorage : Msg -> State -> ( State, Cmd Msg )
+updateWithStorage msg state =
+  let
+      ( newState, cmds ) =
+        update msg state
+  in
+      ( newState
+      -- , Cmd.none
+      , Cmd.batch [ setStorage (extractPersistableState newState), cmds ]
+      )
+
+extractPersistableState : State -> PersistableState
+extractPersistableState state =
+  { lattxt = state.lattxt
+  , lngtxt = state.lngtxt
+  , grid = state.grid
+  , min_alt_txt = state.min_alt_txt
+  , timezonename = state.timezonename
+  , birds = state.birds
   }
 
 type LocatorSelectorType
@@ -90,6 +111,8 @@ type alias Bird =
   , selected : Bool
   }
 
+port setStorage : PersistableState -> Cmd msg
+
 type alias State =
   { locator_selector : LocatorSelectorType
   , lat : Float
@@ -113,6 +136,15 @@ type alias State =
   -- , pass_results : Maybe PassResults
   -- , err : Maybe Http.Error
   , status : LoadingStatus
+  }
+
+type alias PersistableState =
+  { lattxt : String
+  , lngtxt : String
+  , grid : String
+  , min_alt_txt : String
+  , birds : List Bird
+  , timezonename : String
   }
 
 type LoadingStatus
@@ -176,15 +208,34 @@ subscriptions : State -> Sub Msg
 subscriptions state =
   Sub.none
 
-init : () -> (State, Cmd Msg)
-init _ = (
-  initialState
+init : Maybe PersistableState -> (State, Cmd Msg)
+init maybePersistableState = (
+  (initialStateFromPersistable initialState maybePersistableState)
   , Cmd.batch
     [ getAvailableBirds birdsUrl
     , getAvailableTimeZones zonesUrl
     , Task.perform SetTimeZone Time.here
     ]
   )
+
+initialStateFromPersistable : State -> Maybe PersistableState -> State
+initialStateFromPersistable state maybePersistableState =
+  case maybePersistableState of
+    Just p ->
+      let _ = Debug.log "localstorage succeeded" p in
+      {
+      state | lattxt = p.lattxt
+        , lngtxt = p.lngtxt
+        , grid = p.grid
+        , min_alt_txt = p.min_alt_txt
+        , birds = p.birds
+        , timezonename = p.timezonename
+      }
+
+    Nothing ->
+      let _ = Debug.log "localstorage failed" maybePersistableState in
+      state
+
 
 initialState : State
 initialState =
