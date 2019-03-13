@@ -25,7 +25,7 @@ def make_tzinfo(tz, window_start, window_stop):
 
     changes = [
         make_tzinfo_entry(tz.localize(_))
-        for _ in tz._utc_transition_times # pylint: disable=protected-access
+        for _ in sorted(tz._utc_transition_times) # pylint: disable=protected-access
         if window_start <= pytz.utc.localize(_) <= window_stop
     ]
 
@@ -40,5 +40,7 @@ def make_tzinfo(tz, window_start, window_stop):
 
     if end_entry['offset'] != changes[-1]['offset']:
         changes = changes + [end_entry]
+
+    changes = sorted(changes, key=lambda x: x['start'], reverse=True)
 
     return changes

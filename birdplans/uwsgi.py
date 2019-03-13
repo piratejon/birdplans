@@ -271,9 +271,21 @@ class BirdplansUwsgi:
         '''Default handler, returns the main application.
         '''
 
-        with open('static/index.html', 'r') as fin:
-            start_response('200 OK', [('Content-Type', 'text/html; charset=' + self.encoding)])
-            yield bytes(fin.read(), self.encoding) # TODO less sponge plz
+        index = uwsgi.cache_get('./static/index.html')
+        if index is None:
+            with open('static/index.html', 'r') as fin:
+                index = bytes(fin.read(), self.encoding)
+                uwsgi.cache_set('./static/index.html', index)
+                print('set cache for index')
+        else:
+            print('using cached copy')
+
+        start_response('200 OK', [
+            ('Content-Type', 'text/html; charset=' + self.encoding)
+            , ('Yark-Content-Type', 'text/html; charset=' + self.encoding)
+            ])
+
+        yield index
 
     @staticmethod
     def decode_grid(grid):
