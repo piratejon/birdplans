@@ -11,11 +11,11 @@
     <div id="elm-app"></div>
     <script type='text/javascript'>
       // based on <https://github.com/evancz/elm-todomvc/blob/master/index.html> 2019-02-22
-      var storedState = localStorage.getItem('birdplans');
+      var storedState = localStorage.getItem('state');
       var startingState = storedState ? JSON.parse(storedState) : null;
       var app = Elm.Birdplans.init({ node: document.getElementById('elm-app'), flags: startingState });
-      app.ports.setStorage.subscribe(function (state) {
-        localStorage.setItem('birdplans', JSON.stringify(state));
+      app.ports.setState.subscribe(function (state) {
+        localStorage.setItem('state', JSON.stringify(state));
       });
     </script>
   </body>

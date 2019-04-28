@@ -11,6 +11,7 @@ port module Birdplans exposing (main)
 import Browser
 import List
 import Http
+import Set
 
 import Task -- set current time <https://stackoverflow.com/a/52156804/5403184> 2018-12-30
 import Time
@@ -54,7 +55,7 @@ type Msg
   | ReceiveBirds (Result Http.Error (List String))
   | ReceiveTimeZones (Result Http.Error (List String))
   | ReceivePasses (Result Http.Error PassResults)
-  | UpdateBirds String
+  | ToggleBirdCheck String
   | SetTimeZone Time.Zone
   | SetTimeZoneName Time.ZoneName
   | SetTimeNow Time.Posix
@@ -75,7 +76,7 @@ updateWithStorage msg state =
   in
       ( newState
       -- , Cmd.none
-      , Cmd.batch [ setStorage (extractPersistableState newState), cmds ]
+      , Cmd.batch [ setState (extractPersistableState newState), cmds ]
       )
 
 extractPersistableState : State -> PersistableState
@@ -111,7 +112,7 @@ type alias Bird =
   , selected : Bool
   }
 
-port setStorage : PersistableState -> Cmd msg
+port setState : PersistableState -> Cmd msg
 
 type alias State =
   { locator_selector : LocatorSelectorType
@@ -297,7 +298,7 @@ view state =
         , viewInput "Start of 7-day window to search" "datetime-local" initialState.datetime state.datetime (if state.datetime_valid then "valid" else "invalid") UpdateDateTime
         , viewSelect "Time Zone" state.timezonename state.timezones UpdateTimeZone
         , viewInput "Minimum Degrees Altitude" "text" initialState.min_alt_txt state.min_alt_txt (if state.min_alt_valid then "valid" else "invalid") UpdateAlt
-        , viewChecks "Birds" state.birds UpdateBirds
+        , viewChecks "Birds" state.birds ToggleBirdCheck 
         ]
         , div [Attr.class "search"]
           [ div []
@@ -785,7 +786,7 @@ update msg state =
     UpdateAlt alt_txt ->
       case (String.toInt alt_txt) of
         Just alt -> (
-          {state
+          { state
           | min_alt_txt = alt_txt
           , min_alt = alt
           , min_alt_valid = True
@@ -795,15 +796,18 @@ update msg state =
     ReceiveBirds result ->
       case result of
         Err _ -> (state, Cmd.none)
-        Ok birds -> ({state | birds = List.map (\b -> {name=b, selected=False}) (List.sort birds)}, Cmd.none)
+        Ok birds -> (
+          { state | birds = (newBirdsWithSelected birds state.birds)}
+          , Cmd.none
+          )
 
     ReceiveTimeZones result ->
       case result of
         Err _ -> (state, Cmd.none)
         Ok zones -> ({state | timezones = List.sort zones}, Cmd.none)
 
-    UpdateBirds bird ->
-      let _ = Debug.log "updatebirds" bird in
+    ToggleBirdCheck bird ->
+      let _ = Debug.log "ToggleBirdCheck" bird in
       ({state
         | birds = (List.sortWith selectedBirdSorter (List.sortBy .name (List.map (\b -> if b.name == bird then {b | selected = (not b.selected)} else b) state.birds)))}, Cmd.none)
 
@@ -835,6 +839,13 @@ update msg state =
           _ = Debug.log "updatetimezone" tzname
       in
           ({state | timezonename = tzname}, Cmd.none)
+
+newBirdsWithSelected : (List String) -> (List Bird) -> (List Bird)
+newBirdsWithSelected new old =
+  let
+      selected_set = Set.fromList (List.filterMap (\b -> if b.selected then Just b.name else Nothing) old)
+  in
+      List.sortWith selectedBirdSorter (List.sortBy .name (List.filterMap (\n -> Just {name=n, selected=(Set.member n selected_set)}) new))
 
 selectedBirdSorter : Bird -> Bird -> Order
 selectedBirdSorter a b =
