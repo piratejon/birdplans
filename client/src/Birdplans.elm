@@ -56,6 +56,7 @@ type Msg
   | ReceiveTimeZones (Result Http.Error (List String))
   | ReceivePasses (Result Http.Error PassResults)
   | ToggleBirdCheck String
+  | SetResultTime Time.Posix
   | SetTimeZone Time.Zone
   | SetTimeZoneName Time.ZoneName
   | SetTimeNow Time.Posix
@@ -137,6 +138,7 @@ type alias State =
   -- , pass_results : Maybe PassResults
   -- , err : Maybe Http.Error
   , status : LoadingStatus
+  , results_loaded_time : Maybe Time.Posix
   }
 
 type alias PersistableState =
@@ -172,7 +174,7 @@ type alias CustomTimeZoneException =
 
 type alias PassResults =
   { timezone : CustomTimeZone
-  , response_time : Float
+  , response_duration : Float
   , bird_passes : List BirdPass
   }
 
@@ -268,6 +270,7 @@ initialState =
       , timezones = []
       -- , pass_results = Nothing
       , status = New
+      , results_loaded_time = Nothing
       }
 
 httpError : Http.Error -> String
@@ -322,13 +325,20 @@ view state =
                   Loading -> ellipsis
                   Cancelled -> div [Attr.class "cancelled"] [text "Cancelled"]
                   Failed e -> div [Attr.class "failed"] [text (httpError e)]
-                  Loaded pass_results -> div [Attr.class "loaded"] []
+                  Loaded _ -> div [Attr.class "loaded"] []
               ]
           ]
         , (
           case state.status of
             Loaded pass_results -> div [Attr.class "loaded"]
-              [ span [] [text ("Loaded in " ++ (roundFloat pass_results.response_time 2) ++ " seconds")]
+              [ span []
+                [ text ("Retrieved in "
+                ++ (roundFloat pass_results.response_duration 2)
+                ++ (
+                  case state.results_loaded_time of
+                    Just t -> " seconds at " ++ (dateTimeFormatted state.timezone t)
+                    Nothing -> ""
+                ))]
               , div [ Attr.class "results" ] [renderPassResults state pass_results]
               ]
             _ -> span [] []
@@ -814,10 +824,11 @@ update msg state =
     ReceivePasses result ->
       case result of
         Err what -> ({state | status = Failed what}, Cmd.none)
-        Ok pass_results -> -- let _ = Debug.log "receivepasses" passes
-            let _ = Debug.log "receivepasses" pass_results
-            in
-                ({state | status = Loaded pass_results}, Cmd.none)
+        Ok pass_results ->
+            ({state | status = Loaded pass_results}, Task.perform SetResultTime Time.now)
+
+    SetResultTime now ->
+      ({ state | results_loaded_time = Just now}, Cmd.none)
 
     SetTimeZone zone -> ({ state | timezone = zone}, Task.perform SetTimeZoneName Time.getZoneName)
 
