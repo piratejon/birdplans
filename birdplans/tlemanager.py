@@ -37,7 +37,7 @@ class TleManager:
 
         self.tle = self.load()
         # this has the tle with our aliases
-        self.tlestring = '\n'.join([key + '\n' + value for key, value in self.tle.items()])
+        self.tlestring = '\n'.join([key + '\n' + value.replace('n', '-') for key, value in self.tle.items()])
         self.bird = self.parse()
 
     def parse(self):
