@@ -15,7 +15,7 @@ section > label > * {
 }
 
 #birds > label > * {
-  display: block;
+  display: inline;
 }
 
 input[type="text"] {
@@ -28,6 +28,7 @@ div > label {
   margin-right: 1em;
   margin-top: 0.25em;
   margin-bottom: 0.25em;
+  display: inline-block;
 }
 
 div > label.bird_checked {
@@ -40,7 +41,7 @@ table td:first-child { border-left: none; }
 table td:last-child { border-right: none; }
 tr.local-date-first-row { border-top: 1px solid black; }
 td.utc-date-first-row { border-top: 1px solid black; }
-td.bird-first-row { border-top: 1px solid black; }
+td.bird-first-row { border-top: 1px solid black; white-space: pre; }
 
 .search > div {
   display: inline-block;
