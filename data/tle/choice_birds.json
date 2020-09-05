@@ -83,6 +83,10 @@
       "name": "FALCONSAT-3",
       "source": "celestrak/active.txt"
     },
+    "PO-101": {
+      "name": "DIWATA-2B",
+      "source": "celestrak/active.txt"
+    },
     "AO-95": {
       "name": "AO-95",
       "source": "nasa/nasa.all"
