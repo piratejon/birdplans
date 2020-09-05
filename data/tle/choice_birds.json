@@ -57,11 +57,46 @@
     },
     "SO-50": {
       "source": "celestrak/active.txt",
-      "name": "SAUDISAT 1C (SO-50)"
+      "name": "SAUDISAT 1C (SO-50)",
+      "schedule": {
+        "simple": {
+          "mode": "FM",
+          "tx": 146.850,
+          "rx": 435.795
+        }
+      }
     },
     "LilacSat2": {
       "source": "celestrak/active.txt",
-      "name": "LILACSAT-2"
+      "name": "LILACSAT-2",
+      "schedule": {
+        "weekly": {
+          "default": {
+            "duration": "2400",
+            "mode": "SSB/CW",
+            "tx": 144.3625,
+            "rx": 437.200
+          },
+          "4600": {
+            "duration": "2400",
+            "mode": "FM",
+            "tx": 144.3625,
+            "rx": 437.200
+          },
+          "9400": {
+            "duration": "2400",
+            "mode": "FM",
+            "tx": 144.3625,
+            "rx": 437.200
+          },
+          "14200": {
+            "duration": "2400",
+            "mode": "FM",
+            "tx": 144.3625,
+            "rx": 437.200
+          }
+        }
+      }
     },
     "ISS": {
       "source": "celestrak/active.txt",
@@ -73,11 +108,33 @@
     },
     "AO-91": {
       "source": "celestrak/active.txt",
-      "name": "RADFXSAT (FOX-1B)"
+      "name": "RADFXSAT (FOX-1B)",
+      "schedule": {
+        "simple": {
+          "mode": "FM",
+          "tx": 435.250,
+          "rx": 145.960
+        }
+      }
     },
     "AO-92": {
       "source": "celestrak/active.txt",
-      "name": "FOX-1D (AO-92)"
+      "name": "FOX-1D (AO-92)",
+      "schedule": {
+        "weekly": {
+          "default": {
+            "mode": "FM",
+            "tx": 435.350,
+            "rx": 145.880
+          },
+          "0200": {
+            "duration": "2400",
+            "mode": "FM",
+            "tx": 1267.350,
+            "rx": 145.880
+          }
+        }
+      }
     },
     "FalconSat-3": {
       "name": "FALCONSAT-3",
