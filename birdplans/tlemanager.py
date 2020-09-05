@@ -32,8 +32,13 @@ class TleManager:
         self.tledbcurrent = 'tledbcurrent.json' if tledbcurrent is None else tledbcurrent
         self.tledbhistory = 'tledbhistory.json' if tledbhistory is None else tledbhistory
 
-        with open(self.tlesrcfile, 'r') as fin:
-            self.tlesrcs = json.load(fin)
+        try:
+            with open(self.tlesrcfile, 'r') as fin:
+                self.tlesrcs = json.load(fin)
+        except FileNotFoundError:
+            self.tlesrcs = {
+                'sources': []
+            }
 
         self.tle = self.load()
         # this has the tle with our aliases
@@ -55,20 +60,26 @@ class TleManager:
         '''load the current tle data into a dict of {bird_alias: 'tle\nlines'}
         '''
 
-        with open(self.tledbcurrent, 'r') as fin:
-            tledbcurrent = json.load(fin)
+        try:
+            with open(self.tledbcurrent, 'r') as fin:
+                tledbcurrent = json.load(fin)
+        except FileNotFoundError:
+            tledbcurrent = {
+                'sources': []
+            }
 
         bird_tles = {}
         for source in self.tlesrcs['sources']:
-            lines = tledbcurrent[source]['body'].splitlines()
-            for birdname, bird in self.tlesrcs['birds'].items():
-                if 'source' in bird and bird['source'] == source:
-                    lineiter = iter(lines)
-                    for line in lineiter:
-                        if bird['name'] == line.strip():
-                            bird_tles[birdname] = ((birdname + (' ' * 24))[:24]) + \
-                                '\n' + next(lineiter) + '\n' + next(lineiter)
-                            break
+            if source in tledbcurrent:
+                lines = tledbcurrent[source]['body'].splitlines()
+                for birdname, bird in self.tlesrcs['birds'].items():
+                    if 'source' in bird and bird['source'] == source:
+                        lineiter = iter(lines)
+                        for line in lineiter:
+                            if bird['name'] == line.strip():
+                                bird_tles[birdname] = ((birdname + (' ' * 24))[:24]) + \
+                                    '\n' + next(lineiter) + '\n' + next(lineiter)
+                                break
 
         return bird_tles
 
